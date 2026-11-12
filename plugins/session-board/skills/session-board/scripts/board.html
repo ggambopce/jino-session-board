@@ -1,0 +1,359 @@
+<!doctype html>
+<!-- session-board 화면. Copyright (c) 2026 JINO. MIT License. -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>세션 보드</title>
+<style>
+:root {
+  --bg:#0b0b0d; --rail:#101013; --card:#16161a; --raise:#1d1d22; --line:#26262d; --line2:#33333c;
+  --ink:#ededf0; --sub:#9a9aa6; --dim:#6b6b77; --accent:#8f7cf7; --accent-ink:#0b0b0d; --accent-soft:rgba(143,124,247,.14);
+  --ok:#5fcf9a; --bad:#f0806f; --warn:#e6b45a; --info:#6fb3f0;
+  --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  --sans: "Pretendard Variable", Pretendard, "Segoe UI Variable", "Segoe UI", system-ui, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}
+:root[data-theme="light"] {
+  --bg:#f4f4f6; --rail:#ececf0; --card:#ffffff; --raise:#f7f7f9; --line:#e1e1e7; --line2:#d0d0d9;
+  --ink:#17171b; --sub:#5d5d69; --dim:#8a8a96; --accent:#5b46d6; --accent-ink:#ffffff; --accent-soft:rgba(91,70,214,.1);
+  --ok:#1f8a55; --bad:#c2402c; --warn:#9a6a08; --info:#1f6fb8;
+}
+* { box-sizing:border-box; }
+html, body { height:100%; }
+body { margin:0; background:var(--bg); color:var(--ink); font:14.5px/1.55 var(--sans); -webkit-font-smoothing:antialiased; }
+button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:6px; }
+a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+.app { display:grid; grid-template-columns:232px minmax(0,1fr); min-height:100%; }
+.rail { background:var(--rail); border-right:1px solid var(--line); padding:18px 12px; position:sticky; top:0; height:100vh; display:flex; flex-direction:column; gap:14px; overflow:auto; }
+.brand { display:flex; align-items:center; gap:10px; padding:2px 8px; font-weight:650; letter-spacing:-.01em; }
+.brand i { width:22px; height:22px; border-radius:7px; background:linear-gradient(135deg,var(--accent),#c58cf2); flex:none; }
+.pill { display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:2px 9px; border-radius:999px; border:1px solid var(--line2); color:var(--sub); white-space:nowrap; }
+.pill b { width:7px; height:7px; border-radius:50%; background:var(--dim); }
+.pill.busy { color:var(--warn); border-color:color-mix(in srgb,var(--warn) 45%,transparent); } .pill.busy b { background:var(--warn); animation:pulse 1.4s infinite; }
+.pill.live b { background:var(--ok); }
+@keyframes pulse { 50% { opacity:.35; } }
+@media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
+nav { display:flex; flex-direction:column; gap:2px; }
+nav button { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:9px; color:var(--sub); text-align:left; width:100%; }
+nav button:hover { background:var(--raise); color:var(--ink); }
+nav button[aria-selected="true"] { background:var(--accent-soft); color:var(--ink); }
+nav button[aria-selected="true"] svg { color:var(--accent); }
+nav svg { width:17px; height:17px; flex:none; }
+nav .lab { flex:1; white-space:nowrap; }
+nav .n { font-size:12px; color:var(--dim); font-variant-numeric:tabular-nums; }
+nav .dot { width:7px; height:7px; border-radius:50%; background:var(--accent); }
+.railfoot { margin-top:auto; display:flex; gap:6px; flex-wrap:wrap; padding:0 4px; }
+.ghost { font-size:12.5px; padding:5px 10px; border-radius:8px; border:1px solid var(--line2); color:var(--sub); }
+.ghost:hover { color:var(--ink); border-color:var(--dim); }
+main { padding:26px 28px 80px; max-width:940px; width:100%; }
+header h1 { margin:0 0 6px; font-size:21px; letter-spacing:-.015em; text-wrap:balance; }
+.meta { color:var(--sub); font-size:12.5px; overflow-wrap:anywhere; display:flex; flex-wrap:wrap; gap:4px 10px; align-items:center; }
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin:18px 0 22px; }
+.tile { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+.tile span { display:block; font-size:12px; color:var(--sub); }
+.tile b { display:block; font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; letter-spacing:-.02em; margin-top:2px; }
+.tile small { color:var(--dim); font-size:12px; }
+h2 { font-size:15px; margin:0 0 12px; letter-spacing:-.01em; display:flex; align-items:center; gap:8px; }
+h2 small { color:var(--dim); font-weight:400; font-size:12.5px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; overflow-wrap:anywhere; }
+.empty { color:var(--dim); padding:44px 0; text-align:center; border:1px dashed var(--line2); border-radius:12px; }
+.bar { height:6px; background:var(--raise); border-radius:999px; overflow:hidden; margin:10px 0 6px; }
+.bar i { display:block; height:100%; background:var(--accent); border-radius:999px; transition:width .4s; }
+ul.steps { list-style:none; margin:8px 0 0; padding:0; }
+ul.steps li { display:flex; gap:11px; padding:9px 0; border-top:1px solid var(--line); }
+.box { flex:none; width:18px; height:18px; margin-top:2px; border:1.5px solid var(--line2); border-radius:6px; display:grid; place-items:center; font-size:11px; line-height:1; }
+.done .box { background:var(--ok); border-color:var(--ok); color:var(--bg); }
+.done .t { color:var(--sub); }
+.active .box { border-color:var(--warn); box-shadow:0 0 0 3px color-mix(in srgb,var(--warn) 18%,transparent); }
+.note { color:var(--sub); font-size:12.5px; }
+.chip { display:inline-flex; align-items:center; gap:5px; background:var(--raise); border:1px solid var(--line); border-radius:7px; padding:1px 8px; font-size:12px; margin:0 5px 5px 0; color:var(--sub); }
+.chip.ok { color:var(--ok); } .chip.bad { color:var(--bad); } .chip.run { color:var(--warn); } .chip.info { color:var(--info); }
+.row { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
+.rows .row { padding:8px 0; border-top:1px solid var(--line); } .rows .row:first-child { border-top:0; }
+.path { font-family:var(--mono); font-size:12.5px; }
+.cnt { color:var(--dim); font-variant-numeric:tabular-nums; white-space:nowrap; font-size:12.5px; display:flex; gap:8px; align-items:center; }
+pre { white-space:pre-wrap; margin:8px 0 0; font:12.5px/1.55 var(--mono); overflow-wrap:anywhere; background:var(--raise); border:1px solid var(--line); border-radius:9px; padding:10px 12px; }
+code { font:12.5px var(--mono); background:var(--raise); border:1px solid var(--line); border-radius:5px; padding:0 4px; }
+.md p { margin:8px 0; } .md ul, .md ol { margin:8px 0; padding-left:20px; } .md h3 { font-size:14px; margin:12px 0 4px; }
+details summary { cursor:pointer; color:var(--sub); font-size:12.5px; margin-top:8px; }
+.thumbs { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+.thumb { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; position:relative; }
+.thumb button.im { display:block; width:100%; aspect-ratio:4/3; background:var(--raise); }
+.thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.thumb .cap { padding:7px 9px; font-size:12px; color:var(--sub); display:flex; gap:6px; align-items:center; justify-content:space-between; }
+.thumb .cap span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.thumb.sel { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
+.mini { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; } .mini button { width:64px; height:48px; border-radius:8px; overflow:hidden; border:1px solid var(--line); } .mini img { width:100%; height:100%; object-fit:cover; }
+.sev { font-size:11.5px; font-weight:600; padding:1px 7px; border-radius:6px; border:1px solid currentColor; white-space:nowrap; }
+.sev.critical, .sev.fail { color:var(--bad); } .sev.major, .sev.concerns { color:var(--warn); } .sev.minor { color:var(--info); } .sev.note { color:var(--sub); } .sev.pass { color:var(--ok); }
+.finding { padding:10px 0; border-top:1px solid var(--line); }
+dialog { border:1px solid var(--line2); background:var(--card); color:var(--ink); border-radius:14px; padding:18px; max-width:min(92vw,1200px); }
+dialog::backdrop { background:rgba(0,0,0,.72); }
+dialog.view { padding:10px; } dialog.view .imgs { display:flex; gap:10px; justify-content:center; } dialog.view img { max-width:100%; max-height:78vh; border-radius:8px; min-width:0; flex:1 1 0; object-fit:contain; }
+dialog.view .ctl { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:10px; font-size:12.5px; color:var(--sub); }
+.set label { display:flex; align-items:center; gap:10px; padding:7px 0; border-top:1px solid var(--line); } .set label:first-of-type { border-top:0; }
+.set .mv { margin-left:auto; display:flex; gap:4px; } .set .mv button { width:26px; height:26px; border:1px solid var(--line2); border-radius:7px; }
+footer { color:var(--dim); font-size:12px; margin-top:32px; }
+@media (max-width:760px) {
+  .app { display:block; }
+  .rail { position:sticky; top:0; z-index:2; height:auto; flex-direction:column; gap:8px; padding:10px 12px; border-right:0; border-bottom:1px solid var(--line); }
+  nav { flex-direction:row; overflow-x:auto; gap:4px; padding-bottom:2px; } nav button { width:auto; padding:6px 10px; }
+  .railfoot { margin-top:0; } main { padding:18px 16px 64px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><i></i><span>세션 보드</span><span id="live" class="pill" style="margin-left:auto"></span></div>
+    <nav id="tabs" role="tablist" aria-label="보드 탭"></nav>
+    <div class="railfoot">
+      <button class="ghost" id="btnSet">탭 고르기</button>
+      <button class="ghost" id="btnTheme">밝게</button>
+      <button class="ghost" id="btnNote" hidden>알림 켜기</button>
+    </div>
+  </aside>
+  <main>
+    <header><h1 id="title"></h1><div class="meta" id="meta"></div></header>
+    <div class="tiles" id="tiles"></div>
+    <div id="pane" role="tabpanel"></div>
+    <footer id="foot"></footer>
+  </main>
+</div>
+<dialog id="dlgSet"><h2>탭 고르기</h2><div class="set" id="setList"></div><div class="row" style="margin-top:14px"><label class="note"><input type="checkbox" id="setScope"> 이 세션에만 적용</label><button class="ghost" id="setClose">닫기</button></div></dialog>
+<dialog id="dlgView" class="view"><div class="imgs" id="viewImgs"></div><div class="ctl"><button class="ghost" id="viewPrev" aria-label="이전">이전</button><span id="viewCap"></span><span style="display:flex;gap:6px"><button class="ghost" id="viewNext" aria-label="다음">다음</button><button class="ghost" id="viewClose" aria-label="닫기">닫기</button></span></div></dialog>
+<script id="boot" type="application/json">/*BOOT*/</script>
+<script>
+'use strict'
+const BOOT = JSON.parse(document.getElementById('boot').textContent)
+let D = BOOT.data
+const LIVE = BOOT.live, KEY = BOOT.key
+const $ = id => document.getElementById(id)
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n }
+const num = n => Number(n || 0).toLocaleString()
+const when = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString() }
+const ago = iso => { const s = (Date.now() - new Date(iso)) / 1000; if (!(s >= 0)) return ''; return s < 60 ? '방금' : s < 3600 ? Math.floor(s / 60) + '분 전' : s < 86400 ? Math.floor(s / 3600) + '시간 전' : Math.floor(s / 86400) + '일 전' }
+const store = { get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v) } catch { return d } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }, del(k) { try { localStorage.removeItem(k) } catch {} } }
+const empty = text => el('div', 'empty', text)
+const ST = { pass: ['ok', '통과'], fail: ['bad', '실패'], done: ['ok', '완료'], failed: ['bad', '실패'], running: ['run', '진행 중'] }
+const chip = st => el('span', 'chip ' + (ST[st] || ['', ''])[0], (ST[st] || ['', st])[1])
+const fold = (label, text) => { const d = el('details'); d.append(el('summary', '', label)); d.append(el('pre', '', text)); return d }
+const base = p => String(p).split(/[\\/]/).pop()
+
+// ---- 마크다운을 안전하게 DOM 으로 (HTML 문자열을 만들지 않는다) ----
+function inline(parent, text) {
+  const re = /(`[^`]+`)|(\*\*[^*]+\*\*)|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|(https?:\/\/[^\s<>"'`)\]]+)/g
+  let last = 0, m
+  while ((m = re.exec(text))) {
+    if (m.index > last) parent.append(text.slice(last, m.index))
+    if (m[1]) parent.append(el('code', '', m[1].slice(1, -1)))
+    else if (m[2]) parent.append(el('strong', '', m[2].slice(2, -2)))
+    else { const a = el('a', '', m[3] || m[5]); a.href = m[4] || m[5]; a.target = '_blank'; a.rel = 'noreferrer noopener'; parent.append(a) }
+    last = re.lastIndex
+  }
+  if (last < text.length) parent.append(text.slice(last))
+}
+function markdown(text) {
+  const root = el('div', 'md'); const lines = String(text).split(/\r?\n/); let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    if (/^```/.test(line)) { const buf = []; i++; while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]); i++; root.append(el('pre', '', buf.join('\n'))); continue }
+    const h = line.match(/^#{1,6}\s+(.*)$/)
+    if (h) { const n = el('h3'); inline(n, h[1]); root.append(n); i++; continue }
+    const li = /^\s*([-*]|\d+\.)\s+/
+    if (li.test(line)) { const list = el(/^\s*\d+\./.test(line) ? 'ol' : 'ul'); while (i < lines.length && li.test(lines[i])) { const n = el('li'); inline(n, lines[i].replace(li, '')); list.append(n); i++ } root.append(list); continue }
+    if (/^\s*\|/.test(line)) { const buf = []; while (i < lines.length && /^\s*\|/.test(lines[i])) buf.push(lines[i++]); root.append(el('pre', '', buf.join('\n'))); continue }
+    if (!line.trim()) { i++; continue }
+    const buf = []; while (i < lines.length && lines[i].trim() && !/^```|^#{1,6}\s|^\s*([-*]|\d+\.)\s+|^\s*\|/.test(lines[i])) buf.push(lines[i++])
+    const p = el('p'); inline(p, buf.join(' ')); root.append(p)
+  }
+  return root
+}
+
+// ---- 이미지 크게 보기와 두 장 비교 ----
+let viewList = [], viewAt = 0, picked = []
+function showView(list, at) { viewList = list; viewAt = at; drawView(); if (!$('dlgView').open) $('dlgView').showModal() }
+function drawView() {
+  const box = $('viewImgs'); box.replaceChildren()
+  const compare = viewList.length === 2 && viewList.compare
+  for (const im of compare ? viewList : [viewList[viewAt]]) { const n = el('img'); n.src = im.src; n.alt = base(im.path); box.append(n) }
+  $('viewCap').textContent = compare ? base(viewList[0].path) + '  |  ' + base(viewList[1].path) : (viewAt + 1) + ' / ' + viewList.length + ' · ' + base(viewList[viewAt].path)
+  $('viewPrev').hidden = $('viewNext').hidden = compare || viewList.length < 2
+}
+$('viewPrev').onclick = () => { viewAt = (viewAt - 1 + viewList.length) % viewList.length; drawView() }
+$('viewNext').onclick = () => { viewAt = (viewAt + 1) % viewList.length; drawView() }
+$('viewClose').onclick = () => $('dlgView').close()
+$('dlgView').addEventListener('keydown', e => { if (e.key === 'ArrowLeft') $('viewPrev').click(); if (e.key === 'ArrowRight') $('viewNext').click() })
+const post = path => LIVE && fetch(path + '?k=' + KEY, { method: 'POST' }).catch(() => {})
+
+// ---- 탭 ----
+const P = {}
+P.board = () => {
+  const w = el('div'); if (!D.board) { w.append(empty('아직 진행판이 없습니다. Claude 가 여러 단계 작업을 시작하면 여기에 나타납니다.')); return w }
+  const c = el('div', 'card'); const pct = D.board.total ? Math.round(D.board.done / D.board.total * 100) : 0
+  if (D.board.goal) c.append(el('strong', '', D.board.goal))
+  const bar = el('div', 'bar'), fill = el('i'); fill.style.width = pct + '%'; bar.append(fill); c.append(bar)
+  c.append(el('div', 'note', D.board.done + ' / ' + D.board.total + ' 단계 · ' + pct + '%' + (D.board.source === 'todos' ? ' · 할 일 목록에서 가져옴' : '')))
+  const ul = el('ul', 'steps')
+  for (const i of D.board.items) { const li = el('li', i.done ? 'done' : i.active ? 'active' : ''); li.append(el('span', 'box', i.done ? '✓' : '')); const t = el('div'); t.append(el('div', 't', i.text)); if (i.note) t.append(el('div', 'note', i.note)); if (i.active) t.append(el('div', 'note', '진행 중')); li.append(t); ul.append(li) }
+  c.append(ul); w.append(c); return w
+}
+P.reports = () => {
+  const w = el('div'); if (!D.reports.length) w.append(empty('도구를 쓴 턴의 보고가 아직 없습니다.'))
+  const seen = store.get('sb:seen:' + D.session.id, '')
+  for (const r of D.reports) {
+    const c = el('div', 'card'); const row = el('div', 'row')
+    row.append(el('span', 'note', when(r.at) + ' · 도구 ' + r.tools + '회')); if (r.at > seen) row.append(el('span', 'chip info', '새 보고')); c.append(row)
+    if (r.prompt) c.append(el('div', 'note', '요청: ' + r.prompt))
+    const chips = el('div'); chips.style.marginTop = '8px'
+    for (const k of r.checks) { const n = chip(k.status); n.textContent = k.kind + ' ' + n.textContent; chips.append(n) }
+    if (r.files.length) chips.append(el('span', 'chip', '파일 ' + r.files.length + '개'))
+    if (chips.childNodes.length) c.append(chips)
+    c.append(markdown(r.report))
+    const shots = r.images.filter(i => i.src)
+    if (shots.length) { const m = el('div', 'mini'); shots.forEach((im, i) => { const b = el('button'); b.title = base(im.path); const n = el('img'); n.src = im.src; n.alt = base(im.path); n.loading = 'lazy'; b.append(n); b.onclick = () => showView(shots, i); m.append(b) }); c.append(m) }
+    if (r.files.length) c.append(fold('이 턴에 바꾼 파일', r.files.join('\n')))
+    w.append(c)
+  }
+  if (D.reports.length) store.set('sb:seen:' + D.session.id, D.reports[0].at)
+  return w
+}
+P.agents = () => {
+  const w = el('div'); if (!D.agents.length) w.append(empty('띄운 하위 에이전트가 없습니다.'))
+  for (const a of D.agents) { const c = el('div', 'card'); const row = el('div', 'row'); row.append(el('strong', '', a.name)); row.append(chip(a.status)); c.append(row); c.append(el('div', 'note', a.type + ' · 시작 ' + when(a.started) + (a.finished ? ' · 끝 ' + when(a.finished) : ''))); if (a.prompt) c.append(fold('받은 지시', a.prompt)); if (a.result) c.append(fold('최종 보고', a.result)); w.append(c) }
+  return w
+}
+const VD = { pass: '통과', concerns: '고칠 점 있음', fail: '불합격' }, SV = { critical: '치명', major: '중요', minor: '경미', note: '참고' }
+P.codex = () => {
+  const w = el('div'); const V = D.codex.verifications, C = D.codex.calls
+  if (!V.length && !C.length) { w.append(empty('Codex 교차검증 기록이 없습니다. Claude 에게 「코덱스로 교차검증해줘」 라고 하면 여기에 결과가 쌓입니다.')); return w }
+  for (const v of V) {
+    const c = el('div', 'card'); const row = el('div', 'row'); row.append(el('strong', '', '교차검증 · ' + v.mode + (v.targets.length ? ' ' + v.targets.length + '개' : ''))); row.append(el('span', 'sev ' + v.verdict, VD[v.verdict] || v.verdict)); c.append(row)
+    c.append(el('div', 'note', when(v.at) + ' · 읽은 파일 ' + v.checked.length + '개 · ' + Math.round(v.durationMs / 1000) + '초' + (v.focus ? ' · 중점: ' + v.focus : '')))
+    const s = el('p'); s.style.margin = '8px 0 0'; inline(s, v.summary || ''); c.append(s)
+    for (const f of v.findings) { const b = el('div', 'finding'); const r2 = el('div', 'row'); r2.append(el('strong', '', f.title)); r2.append(el('span', 'sev ' + f.severity, SV[f.severity] || f.severity)); b.append(r2); b.append(el('div', 'path note', f.file + (f.line ? ':' + f.line : ''))); const p = el('div'); inline(p, f.detail); b.append(p); if (f.suggestion) { const g = el('div', 'note'); inline(g, '제안: ' + f.suggestion); b.append(g) } c.append(b) }
+    if (v.targets.length) c.append(fold('검토 대상', v.targets.join('\n')))
+    w.append(c)
+  }
+  if (C.length) { w.append(el('h2', '', 'Claude 가 실행한 Codex 호출')); for (const k of C) { const c = el('div', 'card'); const row = el('div', 'row'); row.append(el('span', 'note', when(k.started) + (k.note ? ' · ' + k.note : ''))); row.append(chip(k.status)); c.append(row); c.append(el('pre', '', k.command)); if (k.output) c.append(fold('출력', k.output)); w.append(c) } }
+  return w
+}
+P.images = () => {
+  const w = el('div'); if (!D.images.length) { w.append(empty('Claude 가 보내거나 열어 본 이미지가 없습니다.')); return w }
+  const live = D.images.filter(i => i.src); picked = picked.filter(p => live.some(i => i.path === p))
+  const head = el('div', 'row'); head.style.marginBottom = '10px'; head.append(el('span', 'note', '두 장을 고르면 나란히 비교합니다.'))
+  const cmp = el('button', 'ghost', '비교 (' + picked.length + '/2)'); cmp.disabled = picked.length !== 2; cmp.onclick = () => { const two = picked.map(p => live.find(i => i.path === p)); two.compare = true; showView(two, 0) }; head.append(cmp); w.append(head)
+  const g = el('div', 'thumbs')
+  D.images.forEach((im, idx) => {
+    const t = el('div', 'thumb' + (picked.includes(im.path) ? ' sel' : '')); const b = el('button', 'im'); b.setAttribute('aria-label', '크게 보기')
+    if (im.src) { const n = el('img'); n.src = im.src; n.alt = base(im.path); n.loading = 'lazy'; b.append(n); b.onclick = () => showView(live, live.indexOf(im)) } else { b.textContent = '지워진 파일'; b.disabled = true }
+    t.append(b); const cap = el('div', 'cap'); const name = el('span', '', base(im.path)); name.title = im.path; cap.append(name)
+    if (im.src) { const ck = el('input'); ck.type = 'checkbox'; ck.checked = picked.includes(im.path); ck.setAttribute('aria-label', '비교에 넣기'); ck.onchange = () => { picked = ck.checked ? [...picked, im.path].slice(-2) : picked.filter(p => p !== im.path); draw() }; cap.append(ck) }
+    t.append(cap); if (LIVE && im.src) { const o = el('button', 'ghost', '열기'); o.style.margin = '0 9px 9px'; o.onclick = () => post('/open/image/' + idx); t.append(o) }
+    g.append(t)
+  }); w.append(g); return w
+}
+P.files = () => {
+  const w = el('div'); if (!D.files.length) { w.append(empty('바뀐 파일이 없습니다.')); return w }
+  const c = el('div', 'card rows')
+  D.files.forEach((f, i) => { const row = el('div', 'row'); const p = el('span', 'path', f.path); row.append(p); const r = el('span', 'cnt'); if (f.created) r.append(el('span', 'chip info', '새 파일')); r.append(el('span', '', f.count + '회')); if (LIVE) { const o = el('button', 'ghost', '열기'); o.onclick = () => post('/open/file/' + i); r.append(o) } row.append(r); c.append(row) })
+  w.append(c); w.append(el('div', 'note', 'Claude 가 편집 도구로 고친 파일만 잡힙니다. 셸 명령으로 만든 파일은 빠집니다.')); return w
+}
+P.checks = () => {
+  const w = el('div'); if (!D.checks.length) w.append(empty('빌드, 린트, 타입, 테스트 실행 기록이 없습니다.'))
+  for (const k of D.checks) { const c = el('div', 'card'); const row = el('div', 'row'); row.append(el('strong', '', k.kind)); row.append(chip(k.status)); c.append(row); c.append(el('div', 'note', when(k.at))); c.append(el('pre', '', k.command)); if (k.output) c.append(fold('실패 출력', k.output)); w.append(c) }
+  return w
+}
+P.urls = () => {
+  const w = el('div'); if (!D.urls.length) { w.append(empty('대화에 나온 주소가 없습니다.')); return w }
+  const c = el('div', 'card rows')
+  for (const u of D.urls) {
+    const row = el('div', 'row'); const a = el('a', 'path', u.url); a.href = u.url; a.target = '_blank'; a.rel = 'noreferrer noopener'; row.append(a); const r = el('span', 'cnt')
+    if (u.local) { if (u.alive === true) r.append(el('span', 'chip ok', '켜짐')); else if (u.alive === false) r.append(el('span', 'chip bad', '꺼짐')); else r.append(el('span', 'chip', '로컬'))
+      if (D.lan) { try { const x = new URL(u.url); x.hostname = D.lan; const l = el('a', '', '사내 IP 로'); l.href = x.href; l.target = '_blank'; l.rel = 'noreferrer noopener'; l.title = x.href; r.append(l) } catch {} } }
+    row.append(r); c.append(row)
+  }
+  w.append(c); if (!LIVE) w.append(el('div', 'note', '주소가 켜져 있는지는 실시간 보드(--serve)에서만 확인합니다.')); return w
+}
+P.context = () => {
+  const w = el('div'), c = el('div', 'card'), x = D.context
+  if (x.percent != null) { c.append(el('div', 'note', '컨텍스트 창 ' + num(x.window) + ' 토큰 중 ' + x.percent + '% 사용')); const bar = el('div', 'bar'), fill = el('i'); fill.style.width = Math.min(100, x.percent) + '%'; bar.append(fill); c.append(bar) }
+  const parts = [['캐시 읽기', x.cacheRead, 'var(--accent)'], ['캐시 쓰기', x.cacheWrite, 'var(--info)'], ['새 입력', x.input, 'var(--ok)']]
+  const seg = el('div', 'bar'); seg.style.display = 'flex'; seg.style.height = '10px'
+  for (const [, v, col] of parts) { const s = el('i'); s.style.width = (x.tokens ? v / x.tokens * 100 : 0) + '%'; s.style.background = col; s.style.borderRadius = '0'; seg.append(s) } c.append(seg)
+  const rows = el('div', 'rows'); rows.style.marginTop = '8px'
+  for (const [label, v, col] of [...parts, ['현재 컨텍스트 합계', x.tokens, ''], ['누적 출력', x.output, '']]) { const row = el('div', 'row'); const l = el('span'); if (col) { const d = el('b'); d.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:8px;background:' + col; l.append(d) } l.append(label); row.append(l); row.append(el('span', 'cnt', num(v) + ' 토큰')); rows.append(row) }
+  c.append(rows); w.append(c); w.append(el('div', 'note', '가장 최근 응답의 사용량 기준입니다. 창 크기를 --window 로 주면 사용률이 함께 나옵니다. 계정 사용 한도와 비용은 세션 기록에 없어 보여 주지 않습니다.')); return w
+}
+const ICON = {
+  board: 'M4 6h2M4 12h2M4 18h2M10 6h10M10 12h10M10 18h10', reports: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5', agents: 'M12 4v4M6 12a6 6 0 0 1 12 0v6H6zM9.5 14h.01M14.5 14h.01',
+  codex: 'M8 7l-5 5 5 5M16 7l5 5-5 5M13.5 5l-3 14', images: 'M4 5h16v14H4zM4 15l4.5-4.5 4 4 2.5-2.5 5 5M15 9h.01', files: 'M4 6h6l2 2h8v10H4z',
+  checks: 'M5 12.5l4.5 4.5L19 7.5', urls: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1', context: 'M12 3a9 9 0 1 0 9 9h-9z',
+}
+const TABS = [['board', '진행판'], ['reports', '결과보고'], ['agents', '에이전트'], ['codex', '코덱스'], ['images', '결과물'], ['files', '바뀐 파일'], ['checks', '검사'], ['urls', '주소'], ['context', '컨텍스트']]
+const countOf = id => ({ board: D.board ? D.board.done + '/' + D.board.total : '', reports: D.reports.length, agents: D.agents.length, codex: D.codex.verifications.length + D.codex.calls.length, images: D.images.length, files: D.files.length, checks: D.checks.length, urls: D.urls.length, context: '' })[id]
+
+// ---- 탭 설정 (전체 또는 이 세션만) ----
+const prefKey = () => 'sb:tabs:' + D.session.id
+function prefs() { const p = store.get(prefKey(), null) || store.get('sb:tabs', null) || {}; const order = (p.order || []).filter(id => P[id]); for (const [id] of TABS) if (!order.includes(id)) order.push(id); return { order, hidden: (p.hidden || []).filter(id => P[id]), scoped: !!store.get(prefKey(), null) } }
+function savePrefs(p, scoped) { const v = { order: p.order, hidden: p.hidden }; if (scoped) store.set(prefKey(), v); else { store.del(prefKey()); store.set('sb:tabs', v) } }
+let active = store.get('sb:active', 'board')
+
+function drawTabs() {
+  const p = prefs(), nav = $('tabs'); nav.replaceChildren()
+  const shown = p.order.filter(id => !p.hidden.includes(id)); if (!shown.includes(active)) active = shown[0]
+  const seen = store.get('sb:seen:' + D.session.id, '')
+  for (const id of shown) {
+    const b = el('button'); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(id === active))
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '1.7'); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round'); svg.setAttribute('aria-hidden', 'true')
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('d', ICON[id]); svg.append(path); b.append(svg)
+    b.append(el('span', 'lab', TABS.find(t => t[0] === id)[1]))
+    if (id === 'reports' && id !== active && D.reports.length && D.reports[0].at > seen) { const d = el('span', 'dot'); d.title = '안 읽은 보고'; b.append(d) }
+    const n = countOf(id); if (n !== '' && n !== 0) b.append(el('span', 'n', String(n)))
+    b.onclick = () => { active = id; store.set('sb:active', id); draw() }
+    nav.append(b)
+  }
+}
+function drawHead() {
+  $('title').textContent = D.session.title || '세션 ' + D.session.id.slice(0, 8)
+  document.title = '세션 보드 · ' + (D.session.title || D.session.id.slice(0, 8))
+  const meta = $('meta'); meta.replaceChildren(); const st = el('span', 'pill' + (D.session.busy ? ' busy' : '')); st.append(el('b')); st.append(D.session.busy ? '작업 중' : '대기 중'); meta.append(st)
+  for (const t of [D.session.cwd, D.session.branch && D.session.branch !== 'HEAD' ? '브랜치 ' + D.session.branch : '', D.session.model, '마지막 활동 ' + ago(D.session.updated)]) if (t) meta.append(el('span', '', t))
+  const tiles = $('tiles'); tiles.replaceChildren(); const fails = D.checks.filter(c => c.status === 'fail').length, last = D.codex.verifications[0]
+  for (const [label, value, small] of [['진행', D.board ? D.board.done + ' / ' + D.board.total : '-', D.board && D.board.total ? Math.round(D.board.done / D.board.total * 100) + '%' : '진행판 없음'], ['요청 · 도구', D.counts.turns + ' · ' + D.counts.tools, '턴과 도구 호출'], ['바뀐 파일', D.files.length, fails ? '검사 실패 ' + fails + '건' : '검사 ' + D.checks.length + '건'], ['컨텍스트', num(D.context.tokens), D.context.percent != null ? D.context.percent + '% 사용' : '토큰'], ['교차검증', last ? VD[last.verdict] || last.verdict : '-', last ? '지적 ' + last.findings.length + '건 · ' + ago(last.at) : '기록 없음']]) { const t = el('div', 'tile'); t.append(el('span', '', label)); t.append(el('b', '', String(value))); t.append(el('small', '', small)); tiles.append(t) }
+  $('foot').textContent = '세션 ' + D.session.id + ' · ' + (LIVE ? '실시간 갱신 중' : '만든 시각 ' + when(D.generated))
+  const live = $('live'); live.className = 'pill' + (LIVE ? ' live' : ''); live.replaceChildren(el('b'), LIVE ? '실시간' : '스냅샷')
+}
+function draw() { drawHead(); drawTabs(); const pane = $('pane'); const open = [...pane.querySelectorAll('details')].map(d => d.open); pane.replaceChildren(P[active]()); pane.querySelectorAll('details').forEach((d, i) => { if (open[i]) d.open = true }); if (active === 'reports') drawTabs() }
+
+$('btnSet').onclick = () => {
+  const list = $('setList'), p = prefs(); $('setScope').checked = p.scoped
+  const paint = () => { list.replaceChildren(); p.order.forEach((id, i) => { const row = el('label'); const ck = el('input'); ck.type = 'checkbox'; ck.checked = !p.hidden.includes(id); ck.onchange = () => { if (!ck.checked && p.order.length - p.hidden.length <= 1) { ck.checked = true; return } p.hidden = ck.checked ? p.hidden.filter(x => x !== id) : [...p.hidden, id]; commit() }; row.append(ck); row.append(el('span', '', TABS.find(t => t[0] === id)[1])); const mv = el('span', 'mv'); for (const [txt, d] of [['↑', -1], ['↓', 1]]) { const b = el('button', '', txt); b.setAttribute('aria-label', d < 0 ? '위로' : '아래로'); b.disabled = i + d < 0 || i + d >= p.order.length; b.onclick = e => { e.preventDefault(); [p.order[i], p.order[i + d]] = [p.order[i + d], p.order[i]]; commit(); paint() }; mv.append(b) } row.append(mv); list.append(row) }) }
+  const commit = () => { savePrefs(p, $('setScope').checked); draw() }
+  $('setScope').onchange = commit; paint(); $('dlgSet').showModal()
+}
+$('setClose').onclick = () => $('dlgSet').close()
+const applyTheme = t => { document.documentElement.dataset.theme = t; $('btnTheme').textContent = t === 'light' ? '어둡게' : '밝게' }
+applyTheme(store.get('sb:theme', matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'))
+$('btnTheme').onclick = () => { const t = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'; store.set('sb:theme', t); applyTheme(t) }
+
+// ---- 실시간 갱신과 알림 ----
+if (LIVE) {
+  const noteBtn = $('btnNote')
+  if ('Notification' in window) { noteBtn.hidden = false; const label = () => { noteBtn.textContent = Notification.permission === 'granted' && store.get('sb:notify', false) ? '알림 끄기' : '알림 켜기' }; label(); noteBtn.onclick = async () => { if (Notification.permission !== 'granted') { if (await Notification.requestPermission() !== 'granted') return; store.set('sb:notify', true) } else store.set('sb:notify', !store.get('sb:notify', false)); label() } }
+  let sig = JSON.stringify(D), wasBusy = D.session.busy
+  setInterval(async () => {
+    try {
+      const next = await (await fetch('/data?k=' + KEY, { cache: 'no-store' })).json(); const s = JSON.stringify({ ...next, generated: '' })
+      if (s === sig) return; sig = s
+      const finished = wasBusy && !next.session.busy; wasBusy = next.session.busy; D = next; draw()
+      // 화면을 보고 있지 않을 때 Claude 가 턴을 마치면 알린다.
+      if (finished && document.hidden && store.get('sb:notify', false) && Notification.permission === 'granted') new Notification('Claude 가 답을 마쳤습니다', { body: (D.session.title || '') + (D.reports[0] ? '\n' + D.reports[0].report.slice(0, 120) : '') })
+    } catch { $('live').className = 'pill'; $('live').replaceChildren(el('b'), '연결 끊김') }
+  }, 2000)
+}
+draw()
+</script>
+</body>
+</html>

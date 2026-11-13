@@ -8,6 +8,8 @@ export const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir()
 export const projectsDir = path.join(configDir, 'projects')
 export const boardDir = path.join(configDir, 'session-board')
 export const codexDir = path.join(boardDir, 'codex')
+// side-panel 플러그인이 쓰는 진행판 폴더. 그 훅은 CLAUDE_CONFIG_DIR 와 상관없이 ~/.claude 아래에 쓰므로 둘 다 본다.
+export const planDirs = [...new Set([path.join(configDir, 'session-plans'), path.join(os.homedir(), '.claude', 'session-plans')])]
 
 // ---------- 세션 찾기 ----------
 function listDirs(dir) {
@@ -239,10 +241,24 @@ function analyze(entries) {
 }
 
 // ---------- 보드 파일 ----------
+// 이 플러그인의 session-board 와 side-panel 의 session-plans 중 있는 파일을 읽고, 둘 다 있으면 더 최근에 고친 쪽을 고른다.
+export function boardFileOf(sessionId) {
+  let best = null
+  for (const dir of [boardDir, ...planDirs]) {
+    const file = path.join(dir, `${sessionId}.md`)
+    let mtime
+    try { mtime = fs.statSync(file).mtimeMs } catch { continue }
+    if (!best || mtime > best.mtime) best = { file, mtime }
+  }
+  return best && best.file
+}
+
 function readBoard(sessionId) {
+  const file = boardFileOf(sessionId)
+  if (!file) return null
   let text
-  try { text = fs.readFileSync(path.join(boardDir, `${sessionId}.md`), 'utf8') } catch { return null }
-  const board = { goal: '', items: [] }
+  try { text = fs.readFileSync(file, 'utf8') } catch { return null }
+  const board = { goal: '', items: [], file }
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim()
     const head = line.match(/^#+\s+(.*)$/)

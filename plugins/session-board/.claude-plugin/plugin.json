@@ -1,6 +1,6 @@
 {
   "name": "session-board",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "세션 기록을 읽어 진행판, 결과보고, 에이전트, 코덱스, 결과물, 바뀐 파일, 검사, 주소, 컨텍스트를 실시간 보드나 HTML 한 장으로 보여 주는 스킬, 프로젝트 파일을 Codex 로 교차검증하는 스킬, Claude 가 진행판 파일을 쓰게 하는 훅.",
   "author": {
     "name": "JINO",

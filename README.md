@@ -73,7 +73,7 @@ node plugins/session-board/skills/codex-verify/scripts/codex-verify.mjs --diff -
 .claude-plugin/marketplace.json            마켓플레이스 정의
 plugins/session-board/
   .claude-plugin/plugin.json               플러그인 정의
-  hooks/hooks.json, hooks/board-rule.mjs   진행판 파일 경로와 작성 규칙을 Claude 에게 알리는 훅
+  hooks/hooks.json, hooks/board-rule.mjs   진행판 파일 경로와 작성 규칙을 Claude 에게 알리는 훅 (side-panel 이 켜져 있으면 조용함)
   skills/session-board/SKILL.md
   skills/session-board/scripts/core.mjs    세션 기록 분석
   skills/session-board/scripts/board.mjs   출력과 실시간 서버
@@ -86,8 +86,8 @@ plugins/session-board/
 
 모두 내 컴퓨터 안에서만 처리합니다. 교차검증 때 Codex CLI 가 검토 대상 파일을 읽어 Codex 서비스로 보내는 것이 유일하게 밖으로 나가는 경로입니다.
 
-- 읽기: `~/.claude/projects/` (세션 기록), `~/.claude/session-board/` (보드 파일, 교차검증 기록)
-- 쓰기: Claude 가 `~/.claude/session-board/<세션ID>.md` 에 진행판을 적고, 교차검증 결과가 `~/.claude/session-board/codex/` 에 저장됩니다.
+- 읽기: `~/.claude/projects/` (세션 기록), `~/.claude/session-board/` (보드 파일, 교차검증 기록), `~/.claude/session-plans/` (side-panel 진행판), 설정 파일의 `enabledPlugins` (side-panel 이 켜져 있는지)
+- 쓰기: Claude 가 `~/.claude/session-board/<세션ID>.md` 에 진행판을 적고 (side-panel 이 켜져 있으면 `~/.claude/session-plans/<세션ID>.md`), 교차검증 결과가 `~/.claude/session-board/codex/` 에 저장됩니다.
 - 실시간 보드는 127.0.0.1 에서만 열리고, 주소에 든 임의의 열쇠가 없으면 응답하지 않습니다. 세션 기록에 나온 파일만 번호로 열 수 있습니다.
 
 ## 알아 둘 점
@@ -96,7 +96,7 @@ plugins/session-board/
 - 바뀐 파일은 Claude 가 편집 도구로 고친 것만 잡힙니다. 셸 명령으로 만든 파일은 빠집니다.
 - 계정 사용 한도(5시간, 주간)와 비용은 세션 기록에 없어 보여 주지 않습니다.
 - 하위 에이전트는 받은 지시와 최종 보고만 보여 주고, 중간 단계는 보여 주지 않습니다.
-- 같은 일을 하는 다른 진행판 플러그인과 함께 켜면 규칙 안내가 두 번 나옵니다. 하나만 켜 두세요.
+- [side-panel](https://github.com/HOLYMOLYJUN/claude-side-panel) 플러그인(`side-panel@...`)과 함께 켜 두어도 됩니다. 사용자, 프로젝트(`.claude/settings.json`), 로컬(`.claude/settings.local.json`) 설정을 차례로 겹쳐 보아 side-panel 이 켜져 있으면 이 플러그인의 훅은 아무 안내도 하지 않고, Claude 는 side-panel 규칙대로 `~/.claude/session-plans/<세션ID>.md` 한 곳에만 진행판을 씁니다. 세션 보드는 그 파일도 읽으므로 데스크톱 앱의 「Claude 진행판」과 이 보드에 같은 체크리스트가 보입니다. side-panel 을 끄면 예전처럼 이 플러그인의 훅이 규칙을 알립니다.
 
 ## 만든 배경
 

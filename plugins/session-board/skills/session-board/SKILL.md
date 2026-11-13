@@ -5,8 +5,8 @@ description: 지금 Claude Code 세션의 진행 상황을 한눈에 보여 준�
 
 # 세션 보드
 
-세션 기록(`~/.claude/projects/**/<세션ID>.jsonl`)과 보드 파일(`~/.claude/session-board/<세션ID>.md`)을
-읽어서 현황판을 만든다. 밖으로 보내는 것은 없다.
+세션 기록(`~/.claude/projects/**/<세션ID>.jsonl`)과 보드 파일(`~/.claude/session-board/<세션ID>.md` 또는
+`~/.claude/session-plans/<세션ID>.md`)을 읽어서 현황판을 만든다. 밖으로 보내는 것은 없다.
 
 ## 고르는 기준
 
@@ -60,8 +60,13 @@ node "${CLAUDE_SKILL_DIR}/scripts/board.mjs" --session "${CLAUDE_SESSION_ID}" --
 
 ## 진행판 쓰기
 
-이 플러그인의 훅이 세션마다 보드 파일 경로와 규칙을 알려 준다. 훅 안내가 없으면
-`~/.claude/session-board/<세션ID>.md` 에 다음 모양으로 직접 쓴다.
+진행판 규칙은 한 곳에서만 온다.
+
+- side-panel 플러그인이 꺼져 있으면 이 플러그인의 훅이 세션마다 `~/.claude/session-board/<세션ID>.md` 경로와 규칙을 알려 준다.
+- side-panel 플러그인(`side-panel@...`)이 사용자, 프로젝트, 로컬 설정 중 어디서든 켜져 있으면 (뒤 설정이 앞 설정을 덮는다) 이 플러그인의 훅은 아무것도 알리지 않는다.
+  side-panel 이 알려 주는 `~/.claude/session-plans/<세션ID>.md` 한 곳에만 쓰면 되고, 같은 내용을 session-board 폴더에 또 쓰지 않는다.
+
+어느 훅 안내도 없으면 `~/.claude/session-board/<세션ID>.md` 에 다음 모양으로 직접 쓴다.
 
 ```markdown
 # 이번 목표를 한 줄로
@@ -69,4 +74,5 @@ node "${CLAUDE_SKILL_DIR}/scripts/board.mjs" --session "${CLAUDE_SESSION_ID}" --
 - [ ] 아직 남은 단계
 ```
 
-보드 파일이 없을 때는 스크립트가 세션 기록의 할 일 목록(TodoWrite 등)을 대신 보여 준다.
+스크립트는 두 폴더의 파일을 모두 찾아보고, 둘 다 있으면 더 최근에 고친 파일을 보여 준다.
+둘 다 없을 때는 세션 기록의 할 일 목록(TodoWrite 등)을 대신 보여 준다.

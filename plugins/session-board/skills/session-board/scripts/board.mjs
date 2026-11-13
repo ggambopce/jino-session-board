@@ -84,11 +84,24 @@ function page(boot) {
 
 function withSources(data, toSrc) {
   const srcOf = new Map(data.images.map((img, i) => [img.path, img.gone ? '' : toSrc(img.path, i)]))
+  const turn = r => ({ ...r, images: r.images.map(p => ({ path: p, src: srcOf.get(p) || '' })) })
   return {
     ...data,
     images: data.images.map(img => ({ ...img, src: srcOf.get(img.path) })),
-    reports: data.reports.map(r => ({ ...r, images: r.images.map(p => ({ path: p, src: srcOf.get(p) || '' })) })),
+    reports: data.reports.map(turn),
+    replies: data.replies.map(turn),
   }
+}
+
+// 요청 본문(JSON)을 읽는다. 작은 것만 받는다.
+function readBody(req) {
+  return new Promise(resolve => {
+    let body = ''
+    req.setEncoding('utf8')
+    req.on('data', chunk => { body += chunk; if (body.length > 65536) { req.destroy(); resolve(null) } })
+    req.on('end', () => { try { resolve(body ? JSON.parse(body) : {}) } catch { resolve({}) } })
+    req.on('error', () => resolve(null))
+  })
 }
 
 function openTarget(target) {
@@ -146,7 +159,7 @@ function serve(file, opt) {
     alive = next
   }
 
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1')
     const host = String(req.headers.host || '').replace(/:\d+$/, '')
     const send = (code, type, body) => { res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(body) }
@@ -167,9 +180,10 @@ function serve(file, opt) {
       }
       const open = url.pathname.match(/^\/open\/(file|image)\/(\d+)$/)
       if (req.method === 'POST' && open) {
-        // 세션 기록에 실제로 나온 파일만 번호로 열 수 있다.
+        // 세션 기록에 실제로 나온 파일만 열 수 있다. 경로를 보내면 그 경로로 찾고(목록 순서가 바뀌어도 맞게), 없으면 번호로 찾는다.
         const list = open[1] === 'file' ? current().files : current().images
-        const item = list[Number(open[2])]
+        const body = await readBody(req)
+        const item = body && typeof body.path === 'string' ? list.find(f => f.path === body.path) : list[Number(open[2])]
         if (!item || !fs.existsSync(item.path)) return send(404, 'application/json', '{"ok":false}')
         openTarget(item.path)
         return send(200, 'application/json', '{"ok":true}')

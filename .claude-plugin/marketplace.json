@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "session-board",
-      "description": "세션 보드 스킬(실시간 보드, 9개 탭)과 Codex 교차검증 스킬, 진행판 규칙 훅",
+      "description": "세션 보드 스킬(실시간 보드, 8개 탭)과 Codex 교차검증 스킬, 진행판 규칙 훅",
       "source": "./plugins/session-board",
       "category": "productivity"
     }

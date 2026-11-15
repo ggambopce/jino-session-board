@@ -8,15 +8,18 @@ import http from 'node:http'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { buildData, clip, findTranscript, projectsDir, validSession } from './core.mjs'
+import { boardDir, buildData, clip, findTranscript, listSessions, projectDirs, projectsDir, sessionFile, validSession } from './core.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const HELP = `사용법: node board.mjs [--session <id>] [--transcript <파일>] [--format html|text|json]
                      [--out <파일>] [--open] [--window <토큰수>]
-                     [--serve] [--port <번호>] [--ttl <분>]
+                     [--serve] [--project [작업 경로]] [--port <번호>] [--ttl <분>]
 
-  --serve   실시간 보드. 127.0.0.1 에서만 열리고 주소에 든 열쇠가 있어야 접근된다.
-            세션이 진행되는 대로 화면이 갱신되고, 파일 열기와 로컬 주소 생존 확인이 된다.`
+  --serve     실시간 보드. 127.0.0.1 에서만 열리고 주소에 든 열쇠가 있어야 접근된다.
+              세션이 진행되는 대로 화면이 갱신되고, 파일 열기와 로컬 주소 생존 확인이 된다.
+  --project   --serve 와 함께 쓰면 프로젝트 보드. 서버 하나, 탭 하나로 그 프로젝트의 세션들을 골라 본다.
+              작업 경로를 빼면 --session 이 든 프로젝트, 그것도 없으면 지금 폴더의 프로젝트다.
+              같은 프로젝트 보드가 이미 떠 있으면 새로 띄우지 않고 그 주소를 알려 준다.`
 
 function parseArgs(argv) {
   const opt = { format: 'html', open: false, port: 0, ttl: 120 }
@@ -24,6 +27,7 @@ function parseArgs(argv) {
     const a = argv[i]
     const next = () => argv[++i]
     if (a === '--session') opt.session = validSession(next())
+    else if (a === '--project') { opt.project = true; if (argv[i + 1] && !argv[i + 1].startsWith('--')) opt.projectPath = next() }
     else if (a === '--transcript') opt.transcript = next()
     else if (a === '--format') opt.format = next()
     else if (a === '--out') opt.out = next()
@@ -134,26 +138,93 @@ function probe(origin) {
 
 const originOf = url => { try { return new URL(url).origin } catch { return '' } }
 
-function serve(file, opt) {
+// ---------- 프로젝트 보드 서버 다시 쓰기 ----------
+// 프로젝트마다 떠 있는 서버를 파일 하나에 적어 두고, 같은 프로젝트를 다시 열면 그 서버를 쓴다.
+const serverFile = name => path.join(boardDir, 'servers', `${String(name).toLowerCase().replace(/[^0-9a-z-]/g, '-')}.json`)
+const isAlive = pid => { try { process.kill(pid, 0); return true } catch (err) { return err.code === 'EPERM' } }
+
+function request(method, url, timeout = 1500) {
+  return new Promise(resolve => {
+    try {
+      const req = http.request(url, { method, timeout }, res => {
+        let body = ''
+        res.setEncoding('utf8')
+        res.on('data', c => { body += c })
+        res.on('end', () => { try { resolve(res.statusCode === 200 ? JSON.parse(body) : null) } catch { resolve(null) } })
+      })
+      req.on('timeout', () => { req.destroy(); resolve(null) })
+      req.on('error', () => resolve(null))
+      req.end()
+    } catch { resolve(null) }
+  })
+}
+
+async function findRunning(name) {
+  let st
+  try { st = JSON.parse(fs.readFileSync(serverFile(name), 'utf8')) } catch { return null }
+  if (!st || !st.port || !st.key || !isAlive(st.pid)) return null
+  const base = `http://127.0.0.1:${st.port}`
+  const ping = await request('GET', `${base}/ping?k=${st.key}`)
+  return ping && ping.ok && ping.project === name ? { base, key: st.key, viewing: ping.viewing } : null
+}
+
+// src: 한 세션이면 { file }, 프로젝트면 { dirs, name }
+function serve(opt, src) {
   const key = crypto.randomBytes(16).toString('hex')
-  let cache = { mtime: -1, at: 0, data: null }
+  const proj = !!src.dirs
+  const caches = new Map()
   let alive = new Map()
   let lastHit = Date.now()
+  let lastFile = src.file
+  // 다른 세션에서 같은 보드를 열면 열려 있는 탭이 그 세션으로 넘어가게 한다.
+  let focus = { id: '', n: 0 }
+  let listCache = { at: 0, list: [] }
 
-  const current = () => {
+  const sessions = () => {
+    if (Date.now() - listCache.at > 1500) listCache = { at: Date.now(), list: listSessions(src.dirs) }
+    return listCache.list
+  }
+  const defaultFile = () => {
+    if (!proj) return src.file
+    const id = (opt.session && sessionFile(src.dirs, opt.session) && opt.session) || (sessions()[0] || {}).id
+    return id ? sessionFile(src.dirs, id) : null
+  }
+  // 요청이 고른 세션의 기록 파일. 프로젝트 밖 세션은 고를 수 없다.
+  const fileFor = url => {
+    if (!proj) return src.file
+    const id = url.searchParams.get('s')
+    return id ? sessionFile(src.dirs, id) : defaultFile()
+  }
+  const projectInfo = () => {
+    const cwd = (sessions().find(s => s.cwd) || {}).cwd || ''
+    return { name: path.basename(cwd) || src.name, cwd, key: src.name }
+  }
+
+  const current = file => {
     let mtime = 0
     try { mtime = fs.statSync(file).mtimeMs } catch {}
-    // 보드 파일이나 교차검증 기록은 세션 기록과 따로 바뀌므로 5초마다는 다시 읽는다.
-    if (!cache.data || mtime !== cache.mtime || Date.now() - cache.at > 5000) cache = { mtime, at: Date.now(), data: buildData(file, opt) }
-    return cache.data
+    let c = caches.get(file)
+    // 보드 파일이나 교차검증 기록은 세션 기록과 따로 바뀌므로 5초마다는 다시 만든다 (기록은 새 줄만 읽는다).
+    if (!c || mtime !== c.mtime || Date.now() - c.at > 5000) {
+      c = { mtime, at: Date.now(), data: buildData(file, opt) }
+      caches.delete(file)
+      caches.set(file, c)
+      while (caches.size > 3) caches.delete(caches.keys().next().value)
+    }
+    lastFile = file
+    return c.data
   }
-  const payload = () => {
-    const d = withSources(current(), (p, i) => `/img/${i}?k=${key}`)
-    return { ...d, lan: lanAddress(), urls: d.urls.map(u => ({ ...u, alive: u.local ? alive.get(originOf(u.url)) : undefined })) }
+  const payload = file => {
+    const d0 = current(file)
+    const s = proj ? `&s=${d0.session.id}` : ''
+    const d = withSources(d0, (p, i) => `/img/${i}?k=${key}${s}`)
+    const out = { ...d, lan: lanAddress(), urls: d.urls.map(u => ({ ...u, alive: u.local ? alive.get(originOf(u.url)) : undefined })) }
+    return proj ? { ...out, sessions: sessions(), focus } : out
   }
-  // 대화에 나온 로컬 주소가 지금 떠 있는지 주기적으로 확인한다 (http 로컬 주소만).
+  // 대화에 나온 로컬 주소가 지금 떠 있는지 주기적으로 확인한다 (http 로컬 주소만, 지금 보는 세션 것).
   const refreshAlive = async () => {
-    const origins = [...new Set(current().urls.filter(u => u.local).map(u => originOf(u.url)).filter(o => o.startsWith('http://')))]
+    if (!lastFile) return
+    const origins = [...new Set(current(lastFile).urls.filter(u => u.local).map(u => originOf(u.url)).filter(o => o.startsWith('http://')))]
     const next = new Map()
     await Promise.all(origins.slice(0, 20).map(async o => next.set(o, await probe(o))))
     alive = next
@@ -165,13 +236,22 @@ function serve(file, opt) {
     const send = (code, type, body) => { res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(body) }
     // 다른 사이트가 이 서버를 부르지 못하게 호스트와 열쇠를 모두 확인한다.
     if (!['127.0.0.1', 'localhost'].includes(host) || url.searchParams.get('k') !== key) return send(403, 'text/plain; charset=utf-8', '접근할 수 없습니다.')
+    // 다시 쓰기 확인과 탭 넘기기는 보는 사람이 아니므로 접속으로 치지 않는다.
+    if (req.method === 'GET' && url.pathname === '/ping') return send(200, 'application/json', JSON.stringify({ ok: true, project: proj ? src.name : '', viewing: Date.now() - lastHit < 8000 }))
+    if (req.method === 'POST' && url.pathname === '/focus') {
+      const id = validSession(url.searchParams.get('s'))
+      if (proj && id && sessionFile(src.dirs, id)) focus = { id, n: focus.n + 1 }
+      return send(200, 'application/json', '{"ok":true}')
+    }
     lastHit = Date.now()
     try {
-      if (req.method === 'GET' && url.pathname === '/') return send(200, 'text/html; charset=utf-8', page({ live: true, key, data: payload() }))
-      if (req.method === 'GET' && url.pathname === '/data') return send(200, 'application/json; charset=utf-8', JSON.stringify(payload()))
+      const file = fileFor(url)
+      if (!file) return send(404, 'text/plain; charset=utf-8', '이 프로젝트에서 세션을 찾지 못했습니다.')
+      if (req.method === 'GET' && url.pathname === '/') return send(200, 'text/html; charset=utf-8', page({ live: true, key, project: proj ? projectInfo() : null, data: payload(file) }))
+      if (req.method === 'GET' && url.pathname === '/data') return send(200, 'application/json; charset=utf-8', JSON.stringify(payload(file)))
       const img = url.pathname.match(/^\/img\/(\d+)$/)
       if (req.method === 'GET' && img) {
-        const item = current().images[Number(img[1])]
+        const item = current(file).images[Number(img[1])]
         const type = item && MIME[path.extname(item.path).toLowerCase()]
         if (!item || !type || !fs.existsSync(item.path)) return send(404, 'text/plain; charset=utf-8', '없음')
         // SVG 안의 스크립트가 돌지 않게 막는다.
@@ -181,7 +261,7 @@ function serve(file, opt) {
       const open = url.pathname.match(/^\/open\/(file|image)\/(\d+)$/)
       if (req.method === 'POST' && open) {
         // 세션 기록에 실제로 나온 파일만 열 수 있다. 경로를 보내면 그 경로로 찾고(목록 순서가 바뀌어도 맞게), 없으면 번호로 찾는다.
-        const list = open[1] === 'file' ? current().files : current().images
+        const list = open[1] === 'file' ? current(file).files : current(file).images
         const body = await readBody(req)
         const item = body && typeof body.path === 'string' ? list.find(f => f.path === body.path) : list[Number(open[2])]
         if (!item || !fs.existsSync(item.path)) return send(404, 'application/json', '{"ok":false}')
@@ -196,8 +276,18 @@ function serve(file, opt) {
 
   server.on('error', err => { console.error(`서버를 열지 못했습니다: ${err.message}`); process.exit(1) })
   server.listen(opt.port, '127.0.0.1', () => {
-    const address = `http://127.0.0.1:${server.address().port}/?k=${key}`
-    console.log(`실시간 세션 보드: ${address}`)
+    const port = server.address().port
+    const first = proj ? (opt.session && sessionFile(src.dirs, opt.session) ? opt.session : '') : ''
+    const address = `http://127.0.0.1:${port}/?k=${key}${first ? `#session=${first}` : ''}`
+    if (proj) {
+      // 이 프로젝트 보드가 떠 있다고 적어 두고, 꺼질 때 지운다 (다른 서버가 덮어썼으면 건드리지 않는다).
+      const f = serverFile(src.name)
+      try { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify({ pid: process.pid, port, key, project: src.name, at: new Date().toISOString() })) } catch {}
+      const clear = () => { try { if (JSON.parse(fs.readFileSync(f, 'utf8')).pid === process.pid) fs.unlinkSync(f) } catch {} }
+      process.on('exit', clear)
+      for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => process.exit(0))
+    }
+    console.log(`${proj ? '프로젝트' : '실시간 세션'} 보드: ${address}`)
     console.log(`${opt.ttl}분 동안 접속이 없으면 스스로 꺼집니다.`)
     if (opt.open) openTarget(address)
     refreshAlive()
@@ -206,17 +296,43 @@ function serve(file, opt) {
   setInterval(() => { if (Date.now() - lastHit > opt.ttl * 60000) process.exit(0) }, 30000)
 }
 
+// 프로젝트 보드: 같은 프로젝트 서버가 떠 있으면 그 주소를 알려 주고, 열린 탭이 있으면 이 세션으로 넘긴다.
+async function serveProject(opt) {
+  const dirs = projectDirs({ project: opt.projectPath, session: opt.session })
+  if (!dirs.length) {
+    console.error(`프로젝트의 세션 기록 폴더를 찾지 못했습니다. 찾은 위치: ${projectsDir}`)
+    process.exit(1)
+  }
+  const name = path.basename(dirs[0]).toLowerCase()
+  const running = await findRunning(name)
+  if (running) {
+    const sel = opt.session && sessionFile(dirs, opt.session) ? opt.session : ''
+    if (sel) await request('POST', `${running.base}/focus?k=${running.key}&s=${sel}`)
+    const address = `${running.base}/?k=${running.key}${sel ? `#session=${sel}` : ''}`
+    console.log(`프로젝트 보드: ${address}`)
+    console.log(running.viewing ? '이미 떠 있는 보드입니다. 열려 있는 탭이 이 세션으로 넘어갑니다.' : '이미 떠 있는 보드입니다.')
+    if (opt.open && !running.viewing) openTarget(address)
+    return
+  }
+  if (!listSessions(dirs, 1).length) {
+    console.error(`이 프로젝트에서 세션을 찾지 못했습니다: ${dirs.join(', ')}`)
+    process.exit(1)
+  }
+  serve(opt, { dirs, name })
+}
+
 // ---------- 실행 ----------
-function main() {
+async function main() {
   const opt = parseArgs(process.argv.slice(2))
   if (opt.help) { console.log(HELP); return }
   if (!['html', 'text', 'json'].includes(opt.format)) { console.error(`알 수 없는 형식: ${opt.format}\n${HELP}`); process.exit(2) }
+  if (opt.serve && opt.project && !opt.transcript) return serveProject(opt)
   const file = findTranscript(opt)
   if (!file || !fs.existsSync(file)) {
     console.error(`세션 기록을 찾지 못했습니다${opt.session ? ` (세션 ${opt.session})` : ''}. --transcript <파일> 로 직접 지정해 주세요. 찾은 위치: ${projectsDir}`)
     process.exit(1)
   }
-  if (opt.serve) return serve(file, opt)
+  if (opt.serve) return serve(opt, { file })
   const data = buildData(file, opt)
   if (opt.format === 'json') { console.log(JSON.stringify(data, null, 2)); return }
   if (opt.format === 'text') { console.log(renderText(data)); return }
@@ -230,4 +346,4 @@ function main() {
   if (opt.open) openTarget(out)
 }
 
-main()
+main().catch(err => { console.error(String(err && err.stack || err)); process.exit(1) })

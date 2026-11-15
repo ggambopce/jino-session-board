@@ -23,6 +23,8 @@ Claude 에게 「진행판 보여줘」 라고 하면 브라우저에 보드가 
 보는 방식은 세 가지입니다.
 
 - **실시간 보드** (`--serve`): 세션이 진행되는 대로 2초마다 갱신됩니다. 파일 열기, 로컬 주소 확인, 턴이 끝났을 때 브라우저 알림.
+  - **프로젝트 보드** (`--project`, 스킬의 기본): 같은 작업 폴더의 세션들을 서버 하나, 탭 하나로 봅니다. 왼쪽 목록에 데스크톱 앱 사이드바와 같은 세션 제목, 마지막 활동, 진행판 진행률, 작업 중 표시가 나오고, 누르면 그 세션으로 넘어갑니다. 다른 세션에서 보드를 다시 열면 새 서버를 띄우지 않고, 열려 있는 탭을 그 세션으로 넘깁니다. 세션마다 서버와 탭을 따로 띄우던 때보다 메모리를 덜 씁니다.
+  - 무거운 분석은 고른 세션 하나만 하고, 세션 기록은 새로 붙은 줄만 읽습니다.
 - **HTML 한 장**: 지금 상태를 파일 하나로 저장합니다.
 - **텍스트 요약**: 대화창에서 글로 받습니다.
 
@@ -57,8 +59,10 @@ Claude Code 입력창에서:
 ## 직접 실행
 
 ```bash
-node plugins/session-board/skills/session-board/scripts/board.mjs --serve --open
+node plugins/session-board/skills/session-board/scripts/board.mjs --project --serve --open
 ```
+
+`--project` 를 빼면 세션 하나만 보는 보드가 뜹니다.
 
 ```bash
 node plugins/session-board/skills/codex-verify/scripts/codex-verify.mjs --diff --focus "경계값 처리"

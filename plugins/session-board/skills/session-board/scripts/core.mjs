@@ -57,14 +57,83 @@ export function findTranscript({ session, transcript, cwd } = {}) {
   return newestJsonl(mine) || newestJsonl(all)
 }
 
-// ---------- 기록 읽기 ----------
-function readEntries(file) {
-  const out = []
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-    if (!line.trim()) continue
-    try { out.push(JSON.parse(line)) } catch { /* 쓰는 중인 마지막 줄 */ }
+// ---------- 프로젝트: 같은 작업 폴더의 세션들 ----------
+const slugOf = p => String(p).replace(/[^0-9a-zA-Z]/g, '-').toLowerCase()
+
+// 프로젝트의 세션 기록 폴더들. project 는 작업 경로나 기록 폴더, 없으면 세션이 든 폴더, 그것도 없으면 지금 폴더다.
+// 윈도에서는 D--Work 와 d--Work 가 같은 폴더로 보이므로 실제 폴더 기준으로 한 번만 넣는다.
+export function projectDirs({ project, session, cwd } = {}) {
+  const all = listDirs(projectsDir)
+  let name = ''
+  if (project && all.some(d => d.toLowerCase() === path.resolve(project).toLowerCase())) name = path.basename(project)
+  else if (project) name = slugOf(path.resolve(project))
+  else if (session) { const f = findTranscript({ session }); if (f) name = path.basename(path.dirname(f)) }
+  if (!name) name = slugOf(cwd || process.cwd())
+  const seen = new Set(), out = []
+  for (const d of all) {
+    if (path.basename(d).toLowerCase() !== name.toLowerCase()) continue
+    let id
+    try { const st = fs.statSync(d); id = st.dev + ':' + st.ino } catch { continue }
+    if (seen.has(id)) continue
+    seen.add(id)
+    out.push(d)
   }
   return out
+}
+
+export function sessionFile(dirs, id) {
+  if (!validSession(id)) return null
+  for (const d of dirs) {
+    const file = path.join(d, `${id}.jsonl`)
+    if (fs.existsSync(file)) return file
+  }
+  return null
+}
+
+// ---------- 기록 읽기 ----------
+// 파일에 새로 붙은 줄만 읽는다. 처음 읽을 때도 조각씩 읽어 큰 기록을 한꺼번에 메모리에 올리지 않는다.
+// 줄바꿈(0x0A)은 UTF-8 글자 중간에 나오지 않으므로 줄 단위로 끊으면 글자가 깨지지 않는다.
+const CHUNK = 4 * 1024 * 1024
+function readNewLines(c, file, size, onLine) {
+  let fd
+  try { fd = fs.openSync(file, 'r') } catch { return }
+  try {
+    while (c.offset < size) {
+      const buf = Buffer.alloc(Math.min(CHUNK, size - c.offset))
+      const n = fs.readSync(fd, buf, 0, buf.length, c.offset)
+      if (n <= 0) break
+      c.offset += n
+      const all = c.rest.length ? Buffer.concat([c.rest, buf.subarray(0, n)]) : buf.subarray(0, n)
+      const cut = all.lastIndexOf(10)
+      // 남은 조각은 복사해 두어 읽은 덩어리 전체가 메모리에 남지 않게 한다.
+      c.rest = Buffer.from(cut < 0 ? all : all.subarray(cut + 1))
+      if (cut < 0) continue
+      for (const line of all.toString('utf8', 0, cut).split('\n')) if (line.trim()) onLine(line)
+    }
+  } catch { /* 읽는 도중 파일이 바뀌면 다음에 이어 읽는다 */ }
+  finally { fs.closeSync(fd) }
+}
+
+// 세션마다 분석 상태를 들고 있다가 새 줄만 더한다. 프로젝트 보드에서 세션을 오가도 몇 개만 남긴다.
+const sessionReaders = new Map()
+const KEEP_READERS = 3
+function readSession(file) {
+  let size = 0
+  try { size = fs.statSync(file).size } catch {}
+  let c = sessionReaders.get(file)
+  if (!c || size < c.offset) c = { offset: 0, rest: Buffer.alloc(0), an: createAnalyzer() }
+  sessionReaders.delete(file)
+  sessionReaders.set(file, c)
+  while (sessionReaders.size > KEEP_READERS) sessionReaders.delete(sessionReaders.keys().next().value)
+  const feed = line => { let e; try { e = JSON.parse(line) } catch { return } c.an.feed(e) }
+  readNewLines(c, file, size, feed)
+  // 마지막 줄이 줄바꿈 없이 끝났으면 완성된 줄인지 보고 넣는다 (쓰는 중인 줄이면 다음에 이어 읽는다).
+  if (c.rest.length && c.offset >= size) {
+    let e
+    try { e = JSON.parse(c.rest.toString('utf8')) } catch {}
+    if (e) { c.rest = Buffer.alloc(0); c.an.feed(e) }
+  }
+  return c.an.result()
 }
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
@@ -138,7 +207,8 @@ function parseTodos(input) {
   return items.length ? items : null
 }
 
-function analyze(entries) {
+// 기록 한 줄씩 feed 로 넣고, result 로 지금까지의 모습을 얻는다. 실시간 보드는 새 줄만 넣는다.
+function createAnalyzer() {
   const s = {
     sessionId: '', title: '', titles: { custom: '', agent: '', ai: '' }, cwd: '', branch: '', model: '', started: '', updated: '',
     turns: [], files: new Map(), agents: [], checks: [], urls: new Map(), images: new Map(), codexCalls: [], todos: null,
@@ -170,13 +240,13 @@ function analyze(entries) {
     return list.length > 0
   }
 
-  for (const e of entries) {
+  function feed(e) {
     if (e.sessionId && !s.sessionId) s.sessionId = e.sessionId
     // 제목: 사용자가 붙인 이름, 에이전트 이름, 자동 제목 순으로 쓴다.
     if (e.customTitle) s.titles.custom = e.customTitle
     if (e.agentName) s.titles.agent = e.agentName
     if (e.aiTitle) s.titles.ai = e.aiTitle
-    if (e.isSidechain) continue
+    if (e.isSidechain) return
     if (e.timestamp) { if (!s.started) s.started = e.timestamp; s.updated = e.timestamp }
     if (e.cwd) s.cwd = e.cwd
     if (e.gitBranch) s.branch = e.gitBranch
@@ -184,7 +254,7 @@ function analyze(entries) {
     if (e.type === 'attachment' && e.attachment) {
       const p = e.attachment.prompt
       if (p) onNotices(typeof p === 'string' ? p : Array.isArray(p) ? p.map(x => (x && x.text) || '').join('\n') : '', e.timestamp || '')
-      continue
+      return
     }
 
     if (e.type === 'user') {
@@ -217,17 +287,17 @@ function analyze(entries) {
           if (turn) turn.files.delete(target.ref)
         }
       }
-      if (results.length || e.isMeta) continue
+      if (results.length || e.isMeta) return
       const raw = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n')
-      if (onNotices(raw, e.timestamp || '')) continue
+      if (onNotices(raw, e.timestamp || '')) return
       const text = cleanPrompt(raw)
-      if (!text) continue
+      if (!text) return
       newTurn(e.timestamp || '', clip(text, 400))
       s.busy = true
-      continue
+      return
     }
 
-    if (e.type !== 'assistant') continue
+    if (e.type !== 'assistant') return
     const m = e.message || {}
     if (m.model && !/synthetic/.test(m.model)) s.model = m.model
     if (m.usage) {
@@ -306,9 +376,73 @@ function analyze(entries) {
       }
     }
   }
-  for (const v of outputByMessage.values()) s.outputTokens += v
-  s.title = s.titles.custom || s.titles.agent || s.titles.ai
-  return s
+  // 몇 번을 불러도 같은 값이 나오도록 누적하지 않고 새로 센다.
+  function result() {
+    s.outputTokens = 0
+    for (const v of outputByMessage.values()) s.outputTokens += v
+    s.title = s.titles.custom || s.titles.agent || s.titles.ai
+    return s
+  }
+  return { feed, result }
+}
+
+// ---------- 프로젝트 세션 목록 ----------
+// 목록에는 제목, 첫 요청, 작업 중 여부만 필요하다. 제목 줄과 사용자 요청 줄만 JSON 으로 풀고 나머지는 글자만 훑는다.
+const metaReaders = new Map()
+function scanMeta(file, size) {
+  let c = metaReaders.get(file)
+  if (!c || size < c.offset) c = { offset: 0, rest: Buffer.alloc(0), custom: '', agent: '', ai: '', prompt: '', cwd: '', busy: false }
+  metaReaders.set(file, c)
+  readNewLines(c, file, size, line => {
+    if (line.includes('"isSidechain":true')) return
+    if (line.includes('"customTitle":"') || line.includes('"agentName":"') || line.includes('"aiTitle":"')) {
+      try { const e = JSON.parse(line); if (e.customTitle) c.custom = e.customTitle; if (e.agentName) c.agent = e.agentName; if (e.aiTitle) c.ai = e.aiTitle } catch {}
+      return
+    }
+    if (!c.cwd) { const m = line.match(/"cwd":("(?:[^"\\]|\\.)*")/); if (m) try { c.cwd = JSON.parse(m[1]) } catch {} }
+    if (line.includes('"stop_reason":"end_turn"')) { c.busy = false; return }
+    if (line.includes('"stop_reason":"tool_use"')) { c.busy = true; return }
+    if (!line.includes('"type":"user"') || line.includes('"tool_result"') || line.includes('"isMeta":true')) return
+    let e
+    try { e = JSON.parse(line) } catch { return }
+    if (e.type !== 'user') return
+    const raw = blocksOf(e).filter(b => b.type === 'text').map(b => b.text).join('\n')
+    if (parseNotices(raw).length) return
+    const text = cleanPrompt(raw)
+    if (!text) return
+    if (!c.prompt) c.prompt = clip(text.split('\n').find(x => x.trim()), 120)
+    c.busy = true
+  })
+  return c
+}
+
+function boardSummary(sessionId) {
+  const b = readBoard(sessionId)
+  return b ? { goal: b.goal, done: b.items.filter(i => i.done).length, total: b.items.length } : null
+}
+
+// 최근에 바뀐 순서로 limit 개. 15분 넘게 조용한 세션은 작업 중으로 치지 않는다 (끊긴 세션).
+export function listSessions(dirs, limit = 50) {
+  const files = []
+  for (const d of dirs) {
+    let names = []
+    try { names = fs.readdirSync(d) } catch { continue }
+    for (const n of names) {
+      if (!n.endsWith('.jsonl')) continue
+      const file = path.join(d, n)
+      try { const st = fs.statSync(file); files.push({ file, id: n.slice(0, -6), mtime: st.mtimeMs, size: st.size }) } catch {}
+    }
+  }
+  files.sort((a, b) => b.mtime - a.mtime)
+  const out = []
+  for (const f of files) {
+    if (out.length >= limit) break
+    const m = scanMeta(f.file, f.size)
+    const title = m.custom || m.agent || m.ai
+    if (!title && !m.prompt) continue
+    out.push({ id: f.id, title, prompt: m.prompt, cwd: m.cwd, updated: new Date(f.mtime).toISOString(), busy: m.busy && Date.now() - f.mtime < 15 * 60000, board: boardSummary(f.id) })
+  }
+  return out
 }
 
 // ---------- 하위 에이전트 기록 ----------
@@ -486,7 +620,7 @@ export function readVerifications(sessionId) {
 }
 
 export function buildData(file, opt = {}) {
-  const s = analyze(readEntries(file))
+  const s = readSession(file)
   if (!s.sessionId) s.sessionId = path.basename(file, '.jsonl')
   let board = readBoard(s.sessionId)
   let source = 'file'

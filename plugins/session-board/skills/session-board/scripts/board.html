@@ -287,10 +287,34 @@ dialog.view .meta a { color:#9cdcfe; }
 .lbb.prev { left:8px; top:50%; transform:translateY(-50%); }
 .lbb.next { right:8px; top:50%; transform:translateY(-50%); }
 @media (max-width:600px) { dialog.view .stage { padding:56px 12px 24px; } dialog.view .imgs.two { flex-direction:column; align-items:center; } dialog.view .imgs.two img { max-width:100%; max-height:calc((100vh - 160px) / 2); } }
+/* ===== 프로젝트 보드: 왼쪽 세션 목록 (데스크톱 앱 사이드바처럼) ===== */
+#side { display:none; }
+body.proj { padding-left:248px; }
+body.proj #side { display:flex; flex-direction:column; position:fixed; top:0; bottom:0; left:0; width:248px; z-index:6; background:var(--bg); border-right:1px solid var(--line); }
+#side .ph { display:flex; align-items:baseline; gap:8px; padding:16px 18px 8px; min-width:0; }
+#side .ph b { min-width:0; font-size:13px; font-weight:600; color:var(--strong); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#side .ph span { flex:none; font-size:11px; color:var(--muted); }
+#slist { list-style:none; margin:0; padding:2px 8px 16px; overflow-y:auto; flex:1; scrollbar-width:thin; }
+#slist button { all:unset; box-sizing:border-box; display:flex; flex-direction:column; gap:1px; width:100%; padding:7px 10px; border-radius:6px; cursor:pointer; }
+#slist button:hover { background:var(--hover); }
+#slist button.on { background:var(--surface-2); }
+#slist button:focus-visible { outline:1px solid var(--accent); outline-offset:-2px; }
+#slist .st { display:flex; align-items:center; gap:6px; min-width:0; color:var(--fg); }
+#slist button.on .st { color:var(--strong); font-weight:600; }
+#slist .st span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#slist .sm { font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+@media (max-width:760px) {
+  body.proj { padding-left:0; }
+  body.proj #side { position:static; width:auto; max-height:32vh; border-right:0; border-bottom:1px solid var(--line); }
+}
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
 </style>
 </head>
 <body>
+<aside id="side" aria-label="프로젝트 세션">
+  <div class="ph"><b id="pname"></b><span id="pcount"></span></div>
+  <ul id="slist"></ul>
+</aside>
 <header class="top"><div class="wrap">
   <div class="titlerow"><div class="title" id="title"></div><div class="state" id="state"></div></div>
   <nav>
@@ -323,6 +347,11 @@ dialog.view .meta a { color:#9cdcfe; }
 const BOOT = JSON.parse(document.getElementById('boot').textContent)
 let D = BOOT.data
 const LIVE = BOOT.live, KEY = BOOT.key
+// 프로젝트 보드: 서버가 세션 목록(sessions)과 탭 넘기기 요청(focus)을 자료에 붙여 보낸다.
+const PROJ = BOOT.project || null
+let SESS = D.sessions || [], focusSeen = (D.focus && D.focus.n) || 0
+delete D.sessions; delete D.focus
+if (PROJ) document.body.classList.add('proj')
 const $ = id => document.getElementById(id)
 // 글은 모두 텍스트 노드로 넣는다 (HTML 문자열을 만들지 않는다)
 function el(tag, cls, ...kids) {
@@ -382,7 +411,7 @@ const STATUS = { running: ['running', '실행 중'], done: ['done', '끝남'], f
 const statusBadge = st => { const [c, t] = STATUS[st] || ['', st || '']; return badge(c, t) }
 const post = (url, body) => LIVE && fetch(url + (url.includes('?') ? '&' : '?') + 'k=' + KEY, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) }).catch(() => {})
 // 기본 프로그램으로 열기. 서버는 세션 기록에 나온 파일인지 경로로 다시 확인한다
-const openPath = (kind, p) => { const list = kind === 'file' ? D.files : D.images; post('/open/' + kind + '/' + Math.max(0, list.findIndex(x => x.path === p)), { path: p }) }
+const openPath = (kind, p) => { const list = kind === 'file' ? D.files : D.images; post('/open/' + kind + '/' + Math.max(0, list.findIndex(x => x.path === p)) + (PROJ ? '?s=' + D.session.id : ''), { path: p }) }
 
 // ---- 마크다운을 안전하게 DOM 으로 ----
 function inline(parent, text) {
@@ -893,7 +922,7 @@ let lost = false
 function drawHead() {
   const t = D.session.title || '세션 ' + D.session.id.slice(0, 8)
   $('title').textContent = t; $('title').title = t
-  document.title = t + ' · 세션 보드'
+  document.title = t + (PROJ ? ' · ' + PROJ.name + ' 보드' : ' · 세션 보드')
   const st = $('state'); st.replaceChildren()
   if (!LIVE) { st.className = 'state'; st.append('스냅샷 · ' + stamp(D.generated)) }
   else if (lost) { st.className = 'state bad'; st.append('연결 끊김') }
@@ -923,27 +952,92 @@ if (LIVE && 'Notification' in window) {
     store.set('sb:notify', ck.checked)
   }
 }
-if (LIVE) {
-  let sig = JSON.stringify({ ...D, generated: '' }), wasBusy = D.session.busy
-  setInterval(async () => {
-    try {
-      const next = await (await fetch('/data?k=' + KEY, { cache: 'no-store' })).json(), s = JSON.stringify({ ...next, generated: '' })
-      const back = lost; lost = false
-      if (s === sig) { if (back) drawHead(); return }
-      sig = s
-      const finished = wasBusy && !next.session.busy; wasBusy = next.session.busy; D = next; draw()
-      // 화면을 보고 있지 않을 때 Claude 가 턴을 마치면 알린다.
-      if (finished && document.hidden && store.get('sb:notify', false) && 'Notification' in window && Notification.permission === 'granted') {
-        const r = turns()[0]
-        new Notification('Claude 가 답을 마쳤어요', { body: (D.session.title || '') + (r ? '\n' + plain(r.report).slice(0, 120) : '') })
-      }
-    } catch { if (!lost) { lost = true; drawHead() } }
-  }, 2000)
+// 화면을 보고 있지 않을 때 Claude 가 턴을 마치면 알린다.
+function notifyDone(title, report) {
+  if (!document.hidden || !store.get('sb:notify', false) || !('Notification' in window) || Notification.permission !== 'granted') return
+  new Notification('Claude 가 답을 마쳤어요', { body: (title || '') + (report ? '\n' + plain(report).slice(0, 120) : '') })
+}
+
+// ---- 프로젝트 보드: 세션 목록과 전환 ----
+let want = '', sideSig = ''
+const sessName = s => s.title || s.prompt || '세션 ' + s.id.slice(0, 8)
+function drawSide() {
+  if (!PROJ) return
+  $('pname').textContent = PROJ.name; $('pname').title = PROJ.cwd || PROJ.name
+  $('pcount').textContent = SESS.length + '개 세션'
+  const cur = want || D.session.id
+  const row = s => { const busy = s.id === D.session.id ? D.session.busy : s.busy, b = s.board; return [s.id, sessName(s), busy, ago(s.updated), b && b.total ? b.done + '/' + b.total : ''] }
+  const sig = JSON.stringify([cur, SESS.map(row)])
+  if (sig === sideSig) return
+  sideSig = sig
+  const list = $('slist'), f = document.activeElement, fid = f && list.contains(f) ? f.dataset.sid : ''
+  list.replaceChildren()
+  for (const s of SESS) {
+    const [id, name, busy, when, prog] = row(s)
+    const b = el('button', id === cur ? 'on' : '', el('span', 'st', busy ? el('i', 'pulse') : null, el('span', '', name)), el('span', 'sm', [busy ? '작업 중' : when, prog].filter(Boolean).join(' · ')))
+    b.type = 'button'; b.dataset.sid = id; b.title = name + (s.prompt && s.prompt !== name ? '\n' + s.prompt : '')
+    if (id === cur) b.setAttribute('aria-current', 'true')
+    list.append(el('li', '', b))
+  }
+  if (fid) { const n = list.querySelector('[data-sid="' + fid + '"]'); if (n) n.focus({ preventScroll: true }) }
+}
+function switchTo(id, fromHash) {
+  if (!PROJ || !id || !/^[0-9A-Za-z_-]{8,}$/.test(id)) return
+  if (!fromHash && location.hash !== '#session=' + id) history.replaceState(null, '', '#session=' + id)
+  if (id === (want || D.session.id)) return
+  want = id; drawSide(); tick()
+}
+const hashId = () => (location.hash.match(/session=([0-9A-Za-z_-]{8,})/) || [])[1] || ''
+if (PROJ) {
+  $('slist').addEventListener('click', e => { const b = e.target.closest('[data-sid]'); if (b) switchTo(b.dataset.sid) })
+  addEventListener('hashchange', () => switchTo(hashId(), true))
+}
+
+// ---- 실시간 갱신 ----
+let sig = JSON.stringify({ ...D, generated: '' }), wasBusy = D.session.busy, prevBusy = new Map(SESS.map(s => [s.id, s.busy])), seq = 0
+// 새 자료를 받아 그린다. 다른 세션으로 넘어왔으면 펼침과 읽음 표시를 그 세션 것으로 바꾼다.
+function take(next) {
+  if (PROJ) {
+    const list = next.sessions || SESS, f = next.focus
+    delete next.sessions; delete next.focus
+    // 지금 보지 않는 세션이 턴을 마쳐도 알린다.
+    for (const s of list) if (s.id !== next.session.id && prevBusy.get(s.id) === true && !s.busy) notifyDone(sessName(s), '')
+    prevBusy = new Map(list.map(s => [s.id, s.busy]))
+    SESS = list
+    if (f && f.n > focusSeen) { focusSeen = f.n; if (f.id && f.id !== next.session.id) setTimeout(() => switchTo(f.id), 0) }
+  }
+  const switched = next.session.id !== D.session.id, s = JSON.stringify({ ...next, generated: '' })
+  if (!switched && s === sig) { drawSide(); return false }
+  sig = s
+  const finished = !switched && wasBusy && !next.session.busy
+  wasBusy = next.session.busy; D = next
+  if (switched) { opened.clear(); fullPrompt.clear(); loadRead(); tabSig = ''; scrollTo(0, 0) }
+  draw(); drawSide()
+  if (finished) { const r = turns()[0]; notifyDone(D.session.title, r && r.report) }
+  return true
+}
+// 가장 나중에 보낸 요청의 답만 쓴다 (세션을 빨리 바꿔도 앞 요청 답이 덮어쓰지 않게).
+async function tick() {
+  const my = ++seq, id = want || D.session.id
+  try {
+    const next = await (await fetch('/data?k=' + KEY + (PROJ ? '&s=' + encodeURIComponent(id) : ''), { cache: 'no-store' })).json()
+    if (my !== seq) return
+    const back = lost; lost = false
+    if (want && next.session.id === want) want = ''
+    if (!take(next) && back) drawHead()
+  } catch { if (my === seq && !lost) { lost = true; drawHead() } }
+}
+if (LIVE) setInterval(tick, 2000)
+if (PROJ) {
+  const h = hashId()
+  if (h && h !== D.session.id) switchTo(h, true)
+  else if (!h) history.replaceState(null, '', '#session=' + D.session.id)
 }
 // 「몇 분 전」 글자를 새로 맞춘다
-setInterval(draw, 60000)
+setInterval(() => { draw(); drawSide() }, 60000)
 loadRead()
 draw()
+drawSide()
 </script>
 </body>
 </html>

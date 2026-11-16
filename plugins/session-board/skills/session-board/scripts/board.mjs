@@ -8,7 +8,8 @@ import http from 'node:http'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { boardDir, buildData, clip, findTranscript, listSessions, projectDirs, projectsDir, sessionFile, validSession } from './core.mjs'
+import { boardDir, buildData, clip, findTranscript, listSessions, normalizeLabel, projectDirs, projectsDir, readHidden, readLabels, sessionFile, validSession, writeHidden, writeLabels } from './core.mjs'
+import { inspectSession, stopSession } from './procs.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const HELP = `사용법: node board.mjs [--session <id>] [--transcript <파일>] [--format html|text|json]
@@ -178,12 +179,17 @@ function serve(opt, src) {
   let lastFile = src.file
   // 다른 세션에서 같은 보드를 열면 열려 있는 탭이 그 세션으로 넘어가게 한다.
   let focus = { id: '', n: 0 }
-  let listCache = { at: 0, list: [] }
+  let listCache = { at: 0, list: [], hidden: 0 }
 
-  const sessions = () => {
-    if (Date.now() - listCache.at > 1500) listCache = { at: Date.now(), list: listSessions(src.dirs) }
-    return listCache.list
+  const refreshList = () => {
+    if (Date.now() - listCache.at > 1500) {
+      const list = listSessions(src.dirs, 50, readHidden()), labels = readLabels()
+      // 아이콘 글자를 정해 둔 세션에는 label 을 단다.
+      listCache = { at: Date.now(), list: list.map(s => labels.has(s.id) ? { ...s, label: labels.get(s.id) } : s), hidden: list.hidden || 0 }
+    }
+    return listCache
   }
+  const sessions = () => refreshList().list
   const defaultFile = () => {
     if (!proj) return src.file
     const id = (opt.session && sessionFile(src.dirs, opt.session) && opt.session) || (sessions()[0] || {}).id
@@ -219,7 +225,11 @@ function serve(opt, src) {
     const s = proj ? `&s=${d0.session.id}` : ''
     const d = withSources(d0, (p, i) => `/img/${i}?k=${key}${s}`)
     const out = { ...d, lan: lanAddress(), urls: d.urls.map(u => ({ ...u, alive: u.local ? alive.get(originOf(u.url)) : undefined })) }
-    return proj ? { ...out, sessions: sessions(), focus } : out
+    if (!proj) return out
+    // 꺼진 세션은 기록이 도구 호출에서 끊겼어도 작업 중이 아니다.
+    const me = sessions().find(s => s.id === d.session.id)
+    if (me && me.running === false && out.session.busy) out.session = { ...out.session, busy: false }
+    return { ...out, sessions: sessions(), hidden: refreshList().hidden, focus }
   }
   // 대화에 나온 로컬 주소가 지금 떠 있는지 주기적으로 확인한다 (http 로컬 주소만, 지금 보는 세션 것).
   const refreshAlive = async () => {
@@ -245,6 +255,45 @@ function serve(opt, src) {
     }
     lastHit = Date.now()
     try {
+      // 프로젝트 보드의 「끄기」: 이 프로젝트의 켜져 있는 세션만. 먼저 무엇을 끄는지 보여 주고, 확인을 받으면 끈다.
+      if (proj && ((req.method === 'GET' && url.pathname === '/proc') || (req.method === 'POST' && url.pathname === '/stop'))) {
+        const id = validSession(url.searchParams.get('s'))
+        if (!id || !sessionFile(src.dirs, id)) return send(404, 'application/json', JSON.stringify({ ok: false, error: '이 프로젝트의 세션이 아닙니다.' }))
+        const r = url.pathname === '/proc' ? await inspectSession(id) : await stopSession(id)
+        if (url.pathname === '/stop') listCache.at = 0
+        return send(200, 'application/json; charset=utf-8', JSON.stringify(r))
+      }
+      // 닫힌 세션을 보드 목록에서 빼거나 되돌린다 (세션 기록은 건드리지 않는다). 이 프로젝트 세션만.
+      if (proj && req.method === 'POST' && (url.pathname === '/hide' || url.pathname === '/unhide')) {
+        const body = await readBody(req) || {}
+        const mine = id => validSession(id) && sessionFile(src.dirs, id)
+        const map = readHidden()
+        let n = 0
+        if (url.pathname === '/hide') {
+          const at = new Date().toISOString()
+          for (const id of (Array.isArray(body.ids) ? body.ids : []).slice(0, 500)) if (mine(id) && !map.has(id)) { map.set(id, at); n++ }
+        } else {
+          const ids = body.all === true ? [...map.keys()] : Array.isArray(body.ids) ? body.ids : []
+          for (const id of ids) if (map.has(id) && mine(id)) { map.delete(id); n++ }
+        }
+        if (n) writeHidden(map)
+        listCache.at = 0
+        return send(200, 'application/json', JSON.stringify({ ok: true, n }))
+      }
+      // 세션 아이콘 글자를 바꾼다. 비우면 지워서 자동으로 돌아간다. 이 프로젝트 세션만.
+      if (proj && req.method === 'POST' && url.pathname === '/label') {
+        const body = await readBody(req) || {}
+        const id = validSession(body.id)
+        if (!id || !sessionFile(src.dirs, id)) return send(404, 'application/json', JSON.stringify({ ok: false, error: '이 프로젝트의 세션이 아닙니다.' }))
+        const map = readLabels(), label = normalizeLabel(body.text)
+        if (label ? map.get(id) !== label : map.has(id)) {
+          if (label) map.set(id, label)
+          else map.delete(id)
+          writeLabels(map)
+        }
+        listCache.at = 0
+        return send(200, 'application/json; charset=utf-8', JSON.stringify({ ok: true, label }))
+      }
       const file = fileFor(url)
       if (!file) return send(404, 'text/plain; charset=utf-8', '이 프로젝트에서 세션을 찾지 못했습니다.')
       if (req.method === 'GET' && url.pathname === '/') return send(200, 'text/html; charset=utf-8', page({ live: true, key, project: proj ? projectInfo() : null, data: payload(file) }))

@@ -289,31 +289,130 @@ dialog.view .meta a { color:#9cdcfe; }
 @media (max-width:600px) { dialog.view .stage { padding:56px 12px 24px; } dialog.view .imgs.two { flex-direction:column; align-items:center; } dialog.view .imgs.two img { max-width:100%; max-height:calc((100vh - 160px) / 2); } }
 /* ===== 프로젝트 보드: 왼쪽 세션 목록 (데스크톱 앱 사이드바처럼) ===== */
 #side { display:none; }
-body.proj { padding-left:248px; }
-body.proj #side { display:flex; flex-direction:column; position:fixed; top:0; bottom:0; left:0; width:248px; z-index:6; background:var(--bg); border-right:1px solid var(--line); }
-#side .ph { display:flex; align-items:baseline; gap:8px; padding:16px 18px 8px; min-width:0; }
+body.proj { padding-left:var(--side-w, 248px); }
+body.proj #side { display:flex; flex-direction:column; position:fixed; top:0; bottom:0; left:0; width:var(--side-w, 248px); z-index:6; background:var(--bg); border-right:1px solid var(--line); }
+#side .ph { display:flex; align-items:center; gap:8px; padding:12px 8px 6px 18px; min-width:0; }
+#side .ph b { flex:0 1 auto; }
+#side .fold { all:unset; box-sizing:border-box; flex:none; display:grid; place-items:center; width:26px; height:26px; margin-left:auto; border-radius:5px; color:var(--muted); cursor:pointer; }
+#side .fold:hover { background:var(--hover); color:var(--fg); }
+#side .fold:focus-visible { outline:1px solid var(--accent); }
+/* 오른쪽 끝을 끌어 너비를 바꾼다. 아주 좁히면 아이콘만 남는다. */
+#side .grip { position:absolute; top:0; right:-3px; width:6px; height:100%; cursor:col-resize; z-index:7; touch-action:none; }
+#side .grip:hover, #side .grip.drag, #side .grip:focus-visible { outline:none; background:color-mix(in srgb, var(--accent) 45%, transparent); }
+body.resizing, body.resizing * { cursor:col-resize !important; user-select:none !important; }
+/* 접기 단추, 키보드, 놓은 뒤 붙기만 잠깐 미끄러진다. 끌기 중에는 이 class 가 없어 손을 바로 따라온다. */
+body.proj.side-anim { transition:padding-left .18s ease; }
+body.proj.side-anim #side { transition:width .18s ease; }
+/* 아이콘과 이름이 바뀌는 순간 번쩍이지 않게, 새로 보이는 것만 잠깐 흐리게 나타낸다. 목록 칸은 다시 그려질 때마다 새로 생기니 side-swap 동안만. */
+@keyframes sidefade { from { opacity:0; } }
+body.side-swap #slist .av, body.side-swap #slist .st, body.side-swap #slist .sm, body.side-swap #slist .kill, body.side-swap #slist .sh, #side .ph b, #side .ph span { animation:sidefade .16s ease; }
+/* 어중간한 너비에서도 넘치지 않게. 좁으면 세션 수는 숨긴다. */
+#slist { overflow-x:hidden; }
+#slist .ask .row { flex-wrap:wrap; }
+@media (min-width:761px) { body.side-narrow #side .ph span { display:none; } }
+#slist .av { display:none; }
+#slist .more .short { display:none; }
+/* 아이콘 모드: 세션마다 이름 첫 글자 두 개를 색 칸으로. 켜져 있으면 초록 점, 작업 중이면 깜박이는 파란 점. */
+body.mini #side .ph { justify-content:center; padding:10px 0 6px; }
+body.mini #side .ph b, body.mini #side .ph span, body.mini #side .note { display:none; }
+body.mini #side .fold { margin:0; }
+body.mini #slist { padding:2px 0 16px; scrollbar-width:none; }
+body.mini #slist .sh { height:0; margin:7px 14px; padding:0; overflow:hidden; border-top:1px solid var(--line); font-size:0; }
+body.mini #slist .sh:first-child { display:none; }
+body.mini #slist .it.run .pick, body.mini #slist .pick { align-items:center; padding:4px 0; }
+body.mini #slist .pick:hover, body.mini #slist .pick.on { background:none; }
+body.mini #slist .pick .st, body.mini #slist .pick .sm, body.mini #slist .kill, body.mini #slist .ask { display:none; }
+body.mini #slist .av { position:relative; display:grid; place-items:center; width:34px; height:34px; border-radius:9px; background:var(--av); color:#fff; font-size:12px; font-weight:600; letter-spacing:-.02em; line-height:1; white-space:nowrap; opacity:.82; }
+/* 정한 글자가 길면: 세 글자쯤은 작게 한 줄, 네 글자쯤은 반씩 두 줄 */
+body.mini #slist .av.s3 { font-size:10px; }
+body.mini #slist .av.two { align-content:center; font-size:10px; line-height:1.05; }
+body.mini #slist .av span { display:block; }
+body.mini #slist .pick:hover .av { opacity:1; }
+body.mini #slist .pick.on .av { opacity:1; box-shadow:0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+body.mini #slist .it:not(.run) .av { filter:saturate(.35); opacity:.6; }
+body.mini #slist .av i { position:absolute; right:-3px; bottom:-3px; width:10px; height:10px; border-radius:5px; border:2px solid var(--bg); background:var(--ok); }
+body.mini #slist .av i.busy { background:var(--run); animation:pulse 1.4s ease-in-out infinite; }
+body.mini #slist .mr { padding:8px 0 2px; text-align:center; }
+body.mini #slist .more { width:auto; padding:4px 8px; white-space:nowrap; }
+body.mini #slist .more .full { display:none; }
+body.mini #slist .more .short { display:inline; }
 #side .ph b { min-width:0; font-size:13px; font-weight:600; color:var(--strong); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #side .ph span { flex:none; font-size:11px; color:var(--muted); }
 #slist { list-style:none; margin:0; padding:2px 8px 16px; overflow-y:auto; flex:1; scrollbar-width:thin; }
-#slist button { all:unset; box-sizing:border-box; display:flex; flex-direction:column; gap:1px; width:100%; padding:7px 10px; border-radius:6px; cursor:pointer; }
-#slist button:hover { background:var(--hover); }
-#slist button.on { background:var(--surface-2); }
+#slist button { all:unset; box-sizing:border-box; cursor:pointer; }
 #slist button:focus-visible { outline:1px solid var(--accent); outline-offset:-2px; }
+#slist .it { position:relative; }
+#slist .pick { display:flex; flex-direction:column; gap:1px; width:100%; padding:7px 10px; border-radius:6px; }
+#slist .it.run .pick { padding-right:34px; }
+#slist .pick:hover { background:var(--hover); }
+#slist .pick.on { background:var(--surface-2); }
 #slist .st { display:flex; align-items:center; gap:6px; min-width:0; color:var(--fg); }
-#slist button.on .st { color:var(--strong); font-weight:600; }
+#slist .pick.on .st { color:var(--strong); font-weight:600; }
 #slist .st span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #slist .sm { font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#slist .sh { padding:12px 10px 4px; font-size:11px; color:var(--muted); }
+#slist .sh:first-child { padding-top:2px; }
+#slist .kill, #slist .hide { position:absolute; top:7px; right:6px; display:grid; place-items:center; width:24px; height:24px; border-radius:5px; color:var(--muted); opacity:.55; }
+#slist .it:hover .kill, #slist .kill:focus-visible, #slist .kill.open, #slist .it:hover .hide, #slist .hide:focus-visible { opacity:1; }
+#slist .kill:hover, #slist .kill.open { color:var(--bad); background:color-mix(in srgb, var(--bad) 14%, transparent); }
+/* 닫힌 세션의 「목록에서 빼기」: 끄기와 같은 자리, 색은 무채색 */
+#slist .hide:hover { color:var(--fg); background:var(--hover); }
+body:not(.mini) #slist .it.cl .pick { padding-right:34px; }
+body.mini #slist .hide, body.mini #slist .mr.ops { display:none; }
+#slist .ask { margin:2px 4px 8px; padding:9px 10px; border:1px solid color-mix(in srgb, var(--bad) 45%, var(--line)); border-radius:6px; font-size:12px; line-height:1.5; color:var(--fg); }
+#slist .ask p { margin:0 0 4px; }
+#slist .ask .dim { color:var(--muted); font-size:11px; }
+#slist .ask .err { color:var(--bad); }
+#slist .ask .row { display:flex; gap:6px; margin-top:8px; }
+#slist .ask .row button { padding:3px 10px; border-radius:5px; border:1px solid var(--line); font-size:12px; color:var(--fg); }
+#slist .ask .row button:hover { background:var(--hover); }
+#slist .ask .row .go { border-color:transparent; background:var(--bad); color:#fff; }
+#slist .ask .row .go:hover { background:color-mix(in srgb, var(--bad) 85%, #000); }
+#slist .ask .row button[disabled] { opacity:.5; cursor:default; }
+#side .note { margin:0 10px 6px; font-size:11px; line-height:1.5; color:var(--ok); }
+#side .note.bad { color:var(--bad); }
+#side .note button { margin-left:6px; color:var(--accent); text-decoration:underline; text-underline-offset:2px; }
+#side .note button:hover { color:var(--fg); }
+/* 안내가 목록 맨 위에 있을 때도 첫 묶음 제목을 첫 줄처럼 */
+#slist .note + .sh { padding-top:2px; }
+body.mini #slist .note + .sh { display:none; }
+#slist .mr { padding:10px 4px 2px; }
+#slist .more { display:block; width:100%; padding:5px 6px; border-radius:5px; font-size:11px; color:var(--muted); }
+#slist .more:hover { background:var(--hover); color:var(--fg); }
 @media (max-width:760px) {
   body.proj { padding-left:0; }
   body.proj #side { position:static; width:auto; max-height:32vh; border-right:0; border-bottom:1px solid var(--line); }
+  #side .grip { display:none; }
+  /* 좁은 화면의 아이콘 모드는 가로 한 줄 */
+  body.mini #side .ph { justify-content:flex-start; padding:8px 12px 2px; }
+  body.mini #slist { display:flex; align-items:center; gap:2px; overflow-x:auto; overflow-y:hidden; padding:4px 10px 10px; }
+  body.mini #slist .it { flex:none; }
+  body.mini #slist .pick { padding:4px 3px; }
+  body.mini #slist .sh { display:block; width:0; height:26px; margin:0 6px; border-top:0; border-left:1px solid var(--line); }
+  body.mini #slist .mr { padding:0 0 0 4px; }
 }
+/* 세션 아이콘 글자 바꾸기 상자. 목록은 몇 초마다 다시 그려지므로 body 에 붙인다. */
+.lpop { position:fixed; z-index:20; width:244px; max-width:calc(100vw - 16px); box-sizing:border-box; padding:10px 12px; background:var(--pop); border:1px solid var(--line); border-radius:8px; box-shadow:0 8px 24px var(--shadow); font-size:12px; color:var(--fg); }
+.lpop .lt { margin:0 0 8px; font-weight:600; color:var(--strong); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.lpop .lr { display:flex; align-items:center; gap:8px; }
+.lpop input { flex:none; box-sizing:content-box; width:4.4em; padding:4px 6px; font:inherit; font-size:15px; font-weight:600; text-align:center; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:6px; outline:none; }
+.lpop input:focus { border-color:var(--accent); }
+.lpop input::placeholder { color:var(--muted); font-weight:400; }
+.lpop .lh { font-size:11px; line-height:1.4; color:var(--muted); }
+.lpop .lb { display:flex; justify-content:flex-end; gap:6px; margin-top:10px; }
+.lpop button { padding:3px 10px; border-radius:5px; border:1px solid var(--line); background:none; font:inherit; color:var(--fg); cursor:pointer; }
+.lpop button:hover { background:var(--hover); }
+.lpop button:focus-visible { outline:1px solid var(--accent); outline-offset:1px; }
+.lpop button.go { border-color:transparent; background:var(--bar); color:#fff; }
+.lpop button.go:hover { background:color-mix(in srgb, var(--bar) 85%, #000); }
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
 </style>
 </head>
 <body>
 <aside id="side" aria-label="프로젝트 세션">
-  <div class="ph"><b id="pname"></b><span id="pcount"></span></div>
+  <div class="ph"><b id="pname"></b><span id="pcount"></span><button id="fold" class="fold" type="button"></button></div>
   <ul id="slist"></ul>
+  <div id="grip" class="grip" role="separator" aria-orientation="vertical" aria-label="세션 목록 너비" tabindex="0"></div>
 </aside>
 <header class="top"><div class="wrap">
   <div class="titlerow"><div class="title" id="title"></div><div class="state" id="state"></div></div>
@@ -350,7 +449,9 @@ const LIVE = BOOT.live, KEY = BOOT.key
 // 프로젝트 보드: 서버가 세션 목록(sessions)과 탭 넘기기 요청(focus)을 자료에 붙여 보낸다.
 const PROJ = BOOT.project || null
 let SESS = D.sessions || [], focusSeen = (D.focus && D.focus.n) || 0
-delete D.sessions; delete D.focus
+// HIDDEN: 이 프로젝트에서 목록에서 뺀 닫힌 세션 수 (되돌리기 단추에 씀).
+let HIDDEN = D.hidden || 0
+delete D.sessions; delete D.focus; delete D.hidden
 if (PROJ) document.body.classList.add('proj')
 const $ = id => document.getElementById(id)
 // 글은 모두 텍스트 노드로 넣는다 (HTML 문자열을 만들지 않는다)
@@ -960,26 +1061,198 @@ function notifyDone(title, report) {
 
 // ---- 프로젝트 보드: 세션 목록과 전환 ----
 let want = '', sideSig = ''
+// asking: 끄기 확인 중인 세션 { id, info, err, busy(요청 중) }. note: 방금 끈 세션 안내.
+let asking = null, note = null
+// 누르는 사이에 목록을 다시 그리면 단추가 바뀌어 누른 것이 사라지므로, 손을 뗄 때까지 미룬다.
+let pressing = false
+// 닫힌 세션(꺼졌고 앱에도 없는 세션)을 펼쳐 볼지.
+let closedOpen = false, closedCur = ''
 const sessName = s => s.title || s.prompt || '세션 ' + s.id.slice(0, 8)
+const ENTRY = { 'claude-vscode': 'VS Code', cli: '터미널', 'sdk-cli': '터미널', 'sdk-ts': 'SDK', 'sdk-py': 'SDK' }
+const MB = n => Math.round(n / 1048576) + 'MB'
+const cut = (t, n) => t.length > n ? t.slice(0, n) + '…' : t
+function xIcon() {
+  const s = svg('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'aria-hidden': 'true' })
+  s.append(svg('path', { d: 'M6 6l12 12' }), svg('path', { d: 'M18 6L6 18' }))
+  return s
+}
+function powerIcon() {
+  const s = svg('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'aria-hidden': 'true' })
+  s.append(svg('path', { d: 'M12 3v8' }), svg('path', { d: 'M6.6 6.6a8 8 0 1 0 10.8 0' }))
+  return s
+}
+// 아이콘 모드의 세션 아이콘: 이름 앞 두 낱말의 첫 글자(사용자가 정한 글자가 있으면 그것), 세션마다 다른 색.
+function initials(name) {
+  const w = String(name).replace(/[「」『』[\]()"'`·,.:]/g, ' ').trim().split(/\s+/).filter(Boolean)
+  const ch = x => Array.from(x)[0] || ''
+  if (!w.length) return '?'
+  return (w.length === 1 ? Array.from(w[0]).slice(0, 2).join('') : ch(w[0]) + ch(w[1])).toUpperCase()
+}
+// 넓은 글자: 한글, 한자, 가나, 전각, 그림 글자, 영문 M·W
+const WIDE = /[MWmw@ᄀ-ᇿ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦\u{1f300}-\u{1faff}\u{20000}-\u{3fffd}]/u
+function avatar(id, text, run, busy) {
+  let h = 0
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0
+  // 글자 너비로 크기를 고른다. 넓은 글자 10, 영문·숫자 6 으로 세어 22 까지는 그대로, 30 까지는 작게 한 줄, 넘으면 반씩 두 줄.
+  const ch = Array.from(String(text)), w = ch.reduce((n, c) => n + (WIDE.test(c) ? 10 : 6), 0), half = Math.ceil(ch.length / 2)
+  const body = w > 30 ? [el('span', '', ch.slice(0, half).join('')), el('span', '', ch.slice(half).join(''))] : [text]
+  const a = el('span', 'av' + (w > 30 ? ' two' : w > 22 ? ' s3' : ''), ...body, run ? el('i', busy ? 'busy' : '') : null)
+  a.style.setProperty('--av', 'hsl(' + (h % 360) + ' 42% 40%)')
+  a.setAttribute('aria-hidden', 'true')
+  return a
+}
+function askBox(s) {
+  const a = asking, i = a.info, busy = s.id === D.session.id ? D.session.busy : s.busy
+  const box = el('div', 'ask')
+  box.setAttribute('role', 'group'); box.setAttribute('aria-label', sessName(s) + ' 끄기')
+  if (a.err) box.append(el('p', 'err', a.err))
+  else if (!i) box.append(el('p', 'dim', '프로세스를 확인하는 중...'))
+  else {
+    box.append(el('p', '', '이 세션의 Claude 를 끕니다.'))
+    box.append(el('p', 'dim', 'Claude 프로세스' + (i.children ? '와 하위 ' + i.children + '개' : '') + ' · 약 ' + MB(i.mem)))
+    if (busy) box.append(el('p', 'err', '지금 답하는 중이라 그 답은 끊깁니다.'))
+    if (i.hostsBoard) box.append(el('p', 'dim', '이 보드를 띄운 세션이지만 보드는 계속 켜 둡니다.'))
+    box.append(el('p', 'dim', '대화 기록은 남아서 ' + (ENTRY[s.entry] === 'VS Code' ? 'VS Code' : '앱') + '에서 다시 열면 이어서 할 수 있어요.'))
+  }
+  const go = el('button', 'go', a.busy ? '끄는 중...' : '끄기'), no = el('button', 'no', '취소')
+  go.type = no.type = 'button'; go.dataset.act = 'stop'; no.dataset.act = 'cancel'
+  if (!i || a.err || a.busy) go.disabled = true
+  box.append(el('div', 'row', a.err ? null : go, no))
+  return box
+}
 function drawSide() {
   if (!PROJ) return
   $('pname').textContent = PROJ.name; $('pname').title = PROJ.cwd || PROJ.name
-  $('pcount').textContent = SESS.length + '개 세션'
+  // 켜져 있음: 프로세스가 살아 있다. 꺼짐: 꺼졌지만 앱 사이드바에는 열려 있다. 닫힘: 꺼졌고 앱에도 없다 (VS Code 나 터미널에서 닫은 세션, 앱에서 보관한 세션). 닫힘은 접어 둔다.
+  const known = SESS.some(s => s.running !== undefined), on = SESS.filter(s => s.running)
+  const off = known ? SESS.filter(s => !s.running && s.open) : [], closed = known ? SESS.filter(s => !s.running && !s.open) : []
   const cur = want || D.session.id
-  const row = s => { const busy = s.id === D.session.id ? D.session.busy : s.busy, b = s.board; return [s.id, sessName(s), busy, ago(s.updated), b && b.total ? b.done + '/' + b.total : ''] }
-  const sig = JSON.stringify([cur, SESS.map(row)])
-  if (sig === sideSig) return
+  // 닫힌 세션으로 넘어오면 한 번 펼쳐 보여 주고, 그 뒤로는 접기 단추를 따른다.
+  if (cur !== closedCur) { closedCur = cur; if (closed.some(s => s.id === cur)) closedOpen = true }
+  const showClosed = closedOpen
+  $('pcount').textContent = known ? (on.length + off.length) + '개 세션 · ' + on.length + '개 켜짐' : SESS.length + '개 세션'
+  if (note && Date.now() - note.at > 10000) note = null
+  const row = s => { const busy = s.id === D.session.id ? D.session.busy : s.busy, b = s.board; return [s.id, sessName(s), busy, ago(s.updated), b && b.total ? b.done + '/' + b.total : '', ENTRY[s.entry] || '', !!s.running, s.label || ''] }
+  const sig = JSON.stringify([cur, SESS.map(row), SESS.map(s => !!s.open), showClosed, asking, note && note.text, note && note.undo, HIDDEN, known, closed.map(s => s.id)])
+  if (sig === sideSig || pressing) return
   sideSig = sig
-  const list = $('slist'), f = document.activeElement, fid = f && list.contains(f) ? f.dataset.sid : ''
+  const list = $('slist'), f = document.activeElement, fk = f && list.contains(f) ? (f.dataset.act || '') + ':' + (f.closest('[data-item]') || {}).dataset?.item : ''
   list.replaceChildren()
-  for (const s of SESS) {
-    const [id, name, busy, when, prog] = row(s)
-    const b = el('button', id === cur ? 'on' : '', el('span', 'st', busy ? el('i', 'pulse') : null, el('span', '', name)), el('span', 'sm', [busy ? '작업 중' : when, prog].filter(Boolean).join(' · ')))
-    b.type = 'button'; b.dataset.sid = id; b.title = name + (s.prompt && s.prompt !== name ? '\n' + s.prompt : '')
-    if (id === cur) b.setAttribute('aria-current', 'true')
-    list.append(el('li', '', b))
+  // 방금 한 일 안내는 목록 맨 위에. 목록에서 뺐으면 되돌리기 단추를 붙인다.
+  if (note) {
+    const n = el('li', 'note' + (note.bad ? ' bad' : ''), note.text)
+    if (note.undo) { const u = el('button', '', '되돌리기'); u.type = 'button'; u.dataset.act = 'undo'; n.append(u) }
+    list.append(n)
   }
-  if (fid) { const n = list.querySelector('[data-sid="' + fid + '"]'); if (n) n.focus({ preventScroll: true }) }
+  const item = s => {
+    const [id, name, busy, when, prog, tag, run] = row(s)
+    const meta = [tag, busy ? '작업 중' : when, prog].filter(Boolean).join(' · ')
+    const b = el('button', 'pick' + (id === cur ? ' on' : ''), avatar(id, s.label || initials(name), run, busy), el('span', 'st', busy ? el('i', 'pulse') : null, el('span', '', name)), el('span', 'sm', meta))
+    b.type = 'button'; b.dataset.sid = id; b.dataset.act = 'pick'
+    b.title = [name, (run ? '켜져 있음 · ' : '') + meta, s.prompt && s.prompt !== name ? s.prompt : '', '아이콘 글자 바꾸기: 더블클릭 또는 F2'].filter(Boolean).join('\n')
+    b.setAttribute('aria-label', name + (meta ? ', ' + meta : ''))
+    if (id === cur) b.setAttribute('aria-current', 'true')
+    const cl = known && !s.running && !s.open
+    const li = el('li', 'it' + (run ? ' run' : '') + (cl ? ' cl' : ''), b)
+    li.dataset.item = id
+    if (run) {
+      const k = el('button', 'kill' + (asking && asking.id === id ? ' open' : ''), powerIcon())
+      k.type = 'button'; k.dataset.act = 'kill'; k.title = '이 세션 끄기'; k.setAttribute('aria-label', name + ' 끄기')
+      k.setAttribute('aria-expanded', asking && asking.id === id ? 'true' : 'false')
+      li.append(k)
+      if (asking && asking.id === id) li.append(askBox(s))
+    }
+    // 닫힌 세션은 목록에서 뺄 수 있다 (세션 기록은 그대로).
+    if (cl) {
+      const x = el('button', 'hide', xIcon())
+      x.type = 'button'; x.dataset.act = 'hide'; x.title = '목록에서 빼기'; x.setAttribute('aria-label', name + ' 목록에서 빼기')
+      li.append(x)
+    }
+    return li
+  }
+  if (known) {
+    const group = (label, items) => { if (!items.length) return; list.append(el('li', 'sh', label + ' ' + items.length)); for (const s of items) list.append(item(s)) }
+    group('켜져 있음', on)
+    group('꺼짐', off)
+    if (closed.length) {
+      const label = showClosed ? '닫힌 세션 접기' : '닫힌 세션 ' + closed.length + '개 보기'
+      const t = el('button', 'more', el('span', 'full', label), el('span', 'short', showClosed ? '접기' : '+' + closed.length))
+      t.type = 'button'; t.dataset.act = 'closed'; t.title = label; t.setAttribute('aria-label', label); t.setAttribute('aria-expanded', String(showClosed))
+      list.append(el('li', 'mr', t))
+      if (showClosed) group('닫힘', closed)
+    }
+    if (!on.length && !off.length && !closed.length) list.append(el('li', 'sh', '세션이 없습니다'))
+    // 닫힌 세션 아래 정리 단추: 모두 빼기, 뺀 세션 되돌리기
+    const ops = (act, label) => { const t = el('button', 'more', label); t.type = 'button'; t.dataset.act = act; return el('li', 'mr ops', t) }
+    if (showClosed && closed.length) list.append(ops('hideall', '닫힌 세션 모두 목록에서 빼기'))
+    if (HIDDEN > 0 && (showClosed || !closed.length)) list.append(ops('unhideall', '목록에서 뺀 세션 ' + HIDDEN + '개 되돌리기'))
+  } else for (const s of SESS) list.append(item(s))
+  // 세션 줄 밖의 단추(접기, 정리, 되돌리기)는 data-act 로 다시 찾는다.
+  if (fk) { const [act, id] = fk.split(':'), li = list.querySelector('[data-item="' + id + '"]'), n = li ? li.querySelector('[data-act="' + act + '"]') || li.querySelector('.pick') : id === 'undefined' && act ? list.querySelector('[data-act="' + act + '"]') : null; if (n) n.focus({ preventScroll: true }) }
+}
+async function askStop(id) {
+  if (asking && asking.id === id) { asking = null; drawSide(); return }
+  asking = { id, info: null, err: '', busy: false }; drawSide()
+  try {
+    const r = await (await fetch('/proc?k=' + KEY + '&s=' + encodeURIComponent(id), { cache: 'no-store' })).json()
+    if (!asking || asking.id !== id) return
+    if (r.ok) asking = { ...asking, info: r }; else asking = { ...asking, err: r.error || '끌 수 없습니다.' }
+  } catch { if (asking && asking.id === id) asking = { ...asking, err: '보드 서버에 연결하지 못했습니다.' } }
+  drawSide()
+}
+async function doStop() {
+  if (!asking || !asking.info || asking.busy) return
+  const id = asking.id, s = SESS.find(x => x.id === id), name = s ? sessName(s) : id.slice(0, 8)
+  asking = { ...asking, busy: true }; drawSide()
+  try {
+    const r = await (await fetch('/stop?k=' + KEY + '&s=' + encodeURIComponent(id), { method: 'POST', cache: 'no-store' })).json()
+    if (r.ok) { asking = null; note = { at: Date.now(), text: '「' + (name.length > 24 ? name.slice(0, 24) + '…' : name) + '」 세션을 껐어요 · 약 ' + MB(r.mem) + ' 반납' }; prevBusy.set(id, false) }
+    else asking = { ...asking, busy: false, info: null, err: r.error || '끄지 못했습니다.' }
+  } catch { asking = { ...asking, busy: false, info: null, err: '보드 서버에 연결하지 못했습니다.' } }
+  drawSide(); tick()
+}
+// 닫힌 세션을 목록에서 빼거나 되돌린다 (세션 기록은 그대로). 서버가 안 받으면 안내를 띄운다.
+async function hideReq(url, body) {
+  try { const r = await post(url, body); if (r && r.ok && (await r.json()).ok) return true } catch {}
+  note = { at: Date.now(), text: '보드 서버에 연결하지 못했어요', bad: true }
+  return false
+}
+// 서버 목록을 새로 받아 곧바로 다시 그린다.
+async function reloadSide() { sideSig = ''; await tick(); drawSide() }
+const focusSide = (...qs) => { for (const q of qs) { const n = q && $('slist').querySelector(q); if (n) { n.focus(); return } } }
+async function hideOne(id) {
+  const s = SESS.find(x => x.id === id), name = s ? sessName(s) : id.slice(0, 8)
+  // 뺀 뒤 초점: 아래 닫힌 세션, 없으면 위 닫힌 세션, 그것도 없으면 접기 단추.
+  const li = $('slist').querySelector('[data-item="' + id + '"]')
+  const sib = k => { let n = li && li[k]; while (n && !n.matches('.it.cl')) n = n[k]; return n ? '[data-item="' + n.dataset.item + '"] .pick' : '' }
+  const next = sib('nextElementSibling') || sib('previousElementSibling')
+  const ok = await hideReq('/hide', { ids: [id] })
+  if (ok) note = { at: Date.now(), text: '「' + cut(name, 24) + '」 세션을 목록에서 뺐어요', undo: [id] }
+  await reloadSide()
+  if (ok) focusSide(next, '[data-act="closed"]', '[data-act="undo"]')
+}
+async function hideAll() {
+  const ids = [...$('slist').querySelectorAll('.it.cl')].map(li => li.dataset.item)
+  if (!ids.length) return
+  const ok = await hideReq('/hide', { ids })
+  if (ok) { closedOpen = false; note = { at: Date.now(), text: ids.length + '개 세션을 목록에서 뺐어요', undo: ids } }
+  await reloadSide()
+  if (ok) focusSide('[data-act="undo"]', '[data-act="closed"]')
+}
+// 되돌린 세션이 보이게 닫힌 세션을 펼친다.
+async function undoHide() {
+  const ids = note && note.undo
+  if (!ids) return
+  const ok = await hideReq('/unhide', { ids })
+  if (ok) { if (note && note.undo === ids) note = null; closedOpen = true }
+  await reloadSide()
+  if (ok) focusSide('[data-item="' + ids[0] + '"] .pick', '[data-act="closed"]')
+}
+async function unhideAll() {
+  const ok = await hideReq('/unhide', { all: true })
+  if (ok) { if (note && note.undo) note = null; closedOpen = true }
+  await reloadSide()
+  if (ok) focusSide('[data-act="closed"]')
 }
 function switchTo(id, fromHash) {
   if (!PROJ || !id || !/^[0-9A-Za-z_-]{8,}$/.test(id)) return
@@ -989,7 +1262,168 @@ function switchTo(id, fromHash) {
 }
 const hashId = () => (location.hash.match(/session=([0-9A-Za-z_-]{8,})/) || [])[1] || ''
 if (PROJ) {
-  $('slist').addEventListener('click', e => { const b = e.target.closest('[data-sid]'); if (b) switchTo(b.dataset.sid) })
+  $('slist').addEventListener('click', e => {
+    const b = e.target.closest('[data-act]'), li = b && b.closest('[data-item]')
+    if (b && b.dataset.act === 'closed') { closedOpen = !closedOpen; drawSide(); const t = $('slist').querySelector('[data-act="closed"]'); if (t) t.focus(); return }
+    if (b && b.dataset.act === 'hideall') { hideAll(); return }
+    if (b && b.dataset.act === 'unhideall') { unhideAll(); return }
+    if (b && b.dataset.act === 'undo') { undoHide(); return }
+    if (!b || !li) return
+    const act = b.dataset.act, id = li.dataset.item
+    if (act === 'pick') switchTo(id)
+    else if (act === 'kill') askStop(id)
+    else if (act === 'hide') hideOne(id)
+    else if (act === 'stop') doStop()
+    else if (act === 'cancel') { asking = null; drawSide(); const k = li.querySelector('.kill'); if (k) k.focus() }
+  })
+  // 목록 너비: 오른쪽 끝을 끌거나 화살표 키로 바꾸고, 아주 좁히거나 접기 단추를 누르면 아이콘만 남는다.
+  // 끌기 중에는 58~440 을 손 그대로 따라가고 112 아래면 아이콘. 놓으면 아이콘(58) 이나 목록 최소(140) 로 붙는다. 220 아래면 세션 수를 숨긴다.
+  const W_MIN = 140, W_MAX = 440, W_MINI = 58, W_ICON = 112, W_NARROW = 220
+  const clampW = w => Math.min(W_MAX, Math.max(W_MIN, Math.round(w)))
+  let sideW = clampW(Number(store.get('sb:sideW', 248)) || 248), mini = !!store.get('sb:sideMini', false), dragging = false, startW = sideW
+  let fromW = 0, fromX = 0, liveW = 0, shown = null, animT = 0, swapT = 0
+  const foldIcon = () => {
+    const s = svg('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.8, 'stroke-linejoin': 'round', 'aria-hidden': 'true' })
+    s.append(svg('rect', { x: 3, y: 4, width: 18, height: 16, rx: 2.5 }), svg('path', { d: 'M9 4v16' }), svg('path', { d: mini ? 'M13 10l2 2-2 2' : 'M16 10l-2 2 2 2', 'stroke-linecap': 'round' }))
+    return s
+  }
+  // 보이는 너비 w 를 그린다. 아이콘 모드가 바뀔 때만 접기 단추를 다시 그리고 새로 보이는 것을 흐리게 나타낸다.
+  const paintSide = (w, nw = w) => {
+    const b = document.body, g = $('grip')
+    if (shown !== mini) {
+      if (shown !== null) { b.classList.remove('side-swap'); void b.offsetWidth; b.classList.add('side-swap'); clearTimeout(swapT); swapT = setTimeout(() => b.classList.remove('side-swap'), 220) }
+      shown = mini
+      b.classList.toggle('mini', mini)
+      const f = $('fold'), t = mini ? '목록 펼치기' : '아이콘만 보기'
+      f.replaceChildren(foldIcon()); f.title = t; f.setAttribute('aria-label', t); f.setAttribute('aria-expanded', String(!mini))
+    }
+    b.classList.toggle('side-narrow', !mini && nw < W_NARROW)
+    b.style.setProperty('--side-w', w + 'px')
+    g.setAttribute('aria-valuenow', w); g.setAttribute('aria-valuetext', mini ? '아이콘만' : w + 'px')
+  }
+  const curW = () => Math.round(parseFloat(getComputedStyle($('side')).width)) || 0
+  // anim 이면 side-anim 을 잠깐 붙여 미끄러지게 옮기고, 끝나면 뗀다. 움직이는 동안은 좁은 쪽 너비에 맞춰 세션 수를 숨겨 둔다.
+  const applySide = anim => {
+    const b = document.body, w = mini ? W_MINI : sideW
+    if (!anim) return paintSide(w)
+    const from = curW() || w
+    b.classList.add('side-anim'); clearTimeout(animT)
+    animT = setTimeout(() => { b.classList.remove('side-anim'); b.classList.toggle('side-narrow', !mini && w < W_NARROW) }, 240)
+    paintSide(w, Math.min(w, from))
+  }
+  const saveSide = () => { store.set('sb:sideW', sideW); store.set('sb:sideMini', mini) }
+  $('fold').addEventListener('click', () => { mini = !mini; applySide(true); saveSide() })
+  const grip = $('grip')
+  grip.setAttribute('aria-valuemin', W_MINI); grip.setAttribute('aria-valuemax', W_MAX)
+  grip.title = '끌어서 너비 조절 · 두 번 누르면 아이콘만'
+  grip.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return
+    e.preventDefault(); dragging = true; startW = sideW; fromX = e.clientX
+    // 미끄러지는 중에 잡아도 튀지 않게 지금 보이는 너비에서 시작한다.
+    fromW = liveW = curW() || (mini ? W_MINI : sideW)
+    clearTimeout(animT); document.body.classList.remove('side-anim')
+    mini = liveW < W_ICON; paintSide(liveW)
+    grip.setPointerCapture(e.pointerId); grip.classList.add('drag'); document.body.classList.add('resizing')
+  })
+  grip.addEventListener('pointermove', e => {
+    if (!dragging) return
+    // 손을 그대로 따라간다. 112px 보다 좁으면 아이콘만, 넓으면 이름을 말줄임으로라도 보인다.
+    liveW = Math.min(W_MAX, Math.max(W_MINI, Math.round(fromW + e.clientX - fromX)))
+    mini = liveW < W_ICON; paintSide(liveW)
+  })
+  // 놓을 때 112 아래면 아이콘으로 접고 다시 펼치면 끌기 전 너비로, 140 아래면 목록 최소로 붙인다.
+  const endDrag = () => {
+    if (!dragging) return
+    dragging = false; grip.classList.remove('drag'); document.body.classList.remove('resizing')
+    if (liveW < W_ICON) { mini = true; sideW = startW } else { mini = false; sideW = clampW(liveW) }
+    applySide(true); saveSide()
+  }
+  grip.addEventListener('pointerup', endDrag); grip.addEventListener('pointercancel', endDrag); grip.addEventListener('lostpointercapture', endDrag)
+  grip.addEventListener('dblclick', () => { mini = !mini; applySide(true); saveSide() })
+  grip.addEventListener('keydown', e => {
+    const step = e.shiftKey ? 48 : 16
+    // 왼쪽은 목록 최소까지 줄이고, 거기서 한 번 더 누르면 아이콘만 남긴다.
+    if (e.key === 'ArrowLeft') { if (!mini && sideW > W_MIN) sideW = clampW(sideW - step); else mini = true }
+    else if (e.key === 'ArrowRight') { if (mini) mini = false; else sideW = clampW(sideW + step) }
+    else if (e.key === 'Home') mini = true
+    else if (e.key === 'End') { mini = false; sideW = W_MAX }
+    else if (e.key === 'Enter' || e.key === ' ') mini = !mini
+    else return
+    e.preventDefault(); applySide(true); saveSide()
+  })
+  applySide()
+  $('slist').addEventListener('pointerdown', () => { pressing = true })
+  const release = () => { if (pressing) setTimeout(() => { pressing = false; drawSide() }, 0) }
+  addEventListener('pointerup', release); addEventListener('pointercancel', release)
+  $('slist').addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || !asking || asking.busy) return
+    const id = asking.id
+    asking = null; drawSide()
+    const k = $('slist').querySelector('[data-item="' + id + '"] .kill')
+    if (k) k.focus()
+  })
+  // 세션 아이콘 글자 바꾸기: 세션을 두 번 누르거나 오른쪽 단추, F2. 목록은 몇 초마다 다시 그려지므로 상자는 body 에 붙인다.
+  let lpop = null
+  // back: 닫은 뒤 그 세션 단추로 초점을 돌려줄지 (다른 곳으로 초점이 옮겨 갔으면 돌려주지 않는다).
+  const closeLabel = (back = true) => {
+    if (!lpop) return
+    const p = lpop; lpop = null
+    p.box.remove(); removeEventListener('pointerdown', p.out, true)
+    const b = back && $('slist').querySelector('.pick[data-sid="' + p.id + '"]')
+    if (b) b.focus({ preventScroll: true })
+  }
+  const openLabel = pick => {
+    const id = pick.dataset.sid, s = SESS.find(x => x.id === id)
+    if (!s) return
+    closeLabel(false)
+    const name = sessName(s), was = s.label || ''
+    const inp = el('input'), go = el('button', 'go', '저장'), no = el('button', '', '취소'), lt = el('p', 'lt', name)
+    go.type = no.type = 'button'; lt.title = name
+    inp.type = 'text'; inp.value = was; inp.placeholder = initials(name); inp.autocomplete = 'off'; inp.spellcheck = false
+    inp.setAttribute('aria-label', '아이콘 글자 (네 글자까지, 비우면 자동)')
+    const box = el('div', 'lpop', lt, el('div', 'lr', inp, el('span', 'lh', '네 글자까지 · 비우면 자동')), el('div', 'lb', no, go))
+    box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', name + ' 아이콘 글자 바꾸기')
+    // 네 글자까지. 한글을 조합하는 중에는 자르지 않고 조합이 끝나면 자른다.
+    const cut = () => { const a = Array.from(inp.value); if (a.length > 4) inp.value = a.slice(0, 4).join('') }
+    inp.addEventListener('input', e => { if (!e.isComposing) cut() })
+    inp.addEventListener('compositionend', cut)
+    const save = () => {
+      cut()
+      const text = inp.value.trim()
+      closeLabel()
+      if (text === was) return
+      Promise.resolve(post('/label', { id, text })).then(() => { sideSig = ''; tick() })
+    }
+    go.addEventListener('click', save)
+    no.addEventListener('click', () => closeLabel())
+    box.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeLabel() }
+      else if (e.key === 'Enter' && e.target === inp && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); save() }
+    })
+    box.addEventListener('focusout', e => { if (e.relatedTarget && !box.contains(e.relatedTarget)) closeLabel(false) })
+    document.body.append(box)
+    // 아이콘 오른쪽에 두고, 자리가 없으면 아래에 둔다. 화면 밖으로 나가지 않게 맞춘다. 목록 모드에서는 아이콘이 숨어 있으니 그 줄 옆에.
+    const av = pick.querySelector('.av'), r = (av && av.offsetWidth ? av : pick).getBoundingClientRect()
+    const w = box.offsetWidth, h = box.offsetHeight
+    let x = r.right + 8, y = r.top + r.height / 2 - h / 2
+    if (x + w > innerWidth - 8) { x = r.left; y = r.bottom + 6 }
+    box.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + 'px'
+    box.style.top = Math.max(8, Math.min(y, innerHeight - h - 8)) + 'px'
+    const out = e => { if (!box.contains(e.target)) closeLabel() }
+    addEventListener('pointerdown', out, true)
+    lpop = { id, box, out }
+    inp.focus(); inp.select()
+  }
+  // 세션 단추(.pick)에서만 연다. 빼기(×)·끄기 단추나 확인 상자에서 온 것은 무시한다.
+  const labelAt = e => {
+    const t = e.target, p = t.closest && !t.closest('.hide, .kill, .ask') && t.closest('.pick')
+    if (p) { e.preventDefault(); openLabel(p) }
+  }
+  $('slist').addEventListener('dblclick', labelAt)
+  $('slist').addEventListener('contextmenu', labelAt)
+  $('slist').addEventListener('keydown', e => { if (e.key === 'F2') labelAt(e) })
+  // 두 번 누를 때 이름 글자가 선택되지 않게 한다.
+  $('slist').addEventListener('mousedown', e => { if (e.detail > 1 && e.target.closest('.pick')) e.preventDefault() })
   addEventListener('hashchange', () => switchTo(hashId(), true))
 }
 
@@ -999,9 +1433,13 @@ let sig = JSON.stringify({ ...D, generated: '' }), wasBusy = D.session.busy, pre
 function take(next) {
   if (PROJ) {
     const list = next.sessions || SESS, f = next.focus
-    delete next.sessions; delete next.focus
+    if (typeof next.hidden === 'number') HIDDEN = next.hidden
+    delete next.sessions; delete next.focus; delete next.hidden
     // 지금 보지 않는 세션이 턴을 마쳐도 알린다.
-    for (const s of list) if (s.id !== next.session.id && prevBusy.get(s.id) === true && !s.busy) notifyDone(sessName(s), '')
+    // 꺼진 세션은 답을 마친 것이 아니므로 알리지 않는다.
+    for (const s of list) if (s.id !== next.session.id && prevBusy.get(s.id) === true && !s.busy && s.running !== false) notifyDone(sessName(s), '')
+    // 확인 중이던 세션이 그새 꺼졌으면 확인 상자를 닫는다.
+    if (asking && !asking.busy && !list.some(s => s.id === asking.id && s.running)) asking = null
     prevBusy = new Map(list.map(s => [s.id, s.busy]))
     SESS = list
     if (f && f.n > focusSeen) { focusSeen = f.n; if (f.id && f.id !== next.session.id) setTimeout(() => switchTo(f.id), 0) }

@@ -14,6 +14,8 @@ export const planDirs = [...new Set([path.join(configDir, 'session-plans'), path
 export const usageDirs = [...new Set([path.join(configDir, 'session-usage'), path.join(os.homedir(), '.claude', 'session-usage')])]
 // Codex CLI 기록. 한도 값은 가장 최근 기록 끝에 남는다.
 export const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
+// Claude Code 가 켜져 있는 세션마다 <pid>.json (세션 ID, 프로세스 시작 시각, 상태) 을 두는 폴더.
+export const runDirs = [...new Set([path.join(configDir, 'sessions'), path.join(os.homedir(), '.claude', 'sessions')])]
 
 // ---------- 세션 찾기 ----------
 function listDirs(dir) {
@@ -391,10 +393,11 @@ function createAnalyzer() {
 const metaReaders = new Map()
 function scanMeta(file, size) {
   let c = metaReaders.get(file)
-  if (!c || size < c.offset) c = { offset: 0, rest: Buffer.alloc(0), custom: '', agent: '', ai: '', prompt: '', cwd: '', busy: false }
+  if (!c || size < c.offset) c = { offset: 0, rest: Buffer.alloc(0), custom: '', agent: '', ai: '', prompt: '', cwd: '', entry: '', busy: false }
   metaReaders.set(file, c)
   readNewLines(c, file, size, line => {
     if (line.includes('"isSidechain":true')) return
+    if (!c.entry) { const m = line.match(/"entrypoint":"([\w-]{1,40})"/); if (m) c.entry = m[1] }
     if (line.includes('"customTitle":"') || line.includes('"agentName":"') || line.includes('"aiTitle":"')) {
       try { const e = JSON.parse(line); if (e.customTitle) c.custom = e.customTitle; if (e.agentName) c.agent = e.agentName; if (e.aiTitle) c.ai = e.aiTitle } catch {}
       return
@@ -421,8 +424,77 @@ function boardSummary(sessionId) {
   return b ? { goal: b.goal, done: b.items.filter(i => i.done).length, total: b.items.length } : null
 }
 
-// 최근에 바뀐 순서로 limit 개. 15분 넘게 조용한 세션은 작업 중으로 치지 않는다 (끊긴 세션).
-export function listSessions(dirs, limit = 50) {
+const pidAlive = pid => { try { process.kill(pid, 0); return true } catch (e) { return e.code === 'EPERM' } }
+// 지금 켜져 있는 세션 (프로세스가 살아 있는 것만). known: Claude Code 가 이 기록을 남기는 버전인지.
+export function runningSessions() {
+  const map = new Map()
+  let known = false
+  for (const d of runDirs) {
+    let names
+    try { names = fs.readdirSync(d); known = true } catch { continue }
+    for (const n of names) {
+      if (!/^\d+\.json$/.test(n)) continue
+      let j
+      try { j = JSON.parse(fs.readFileSync(path.join(d, n), 'utf8')) } catch { continue }
+      if (!j || !validSession(j.sessionId) || !Number.isInteger(j.pid) || !pidAlive(j.pid)) continue
+      const prev = map.get(j.sessionId)
+      if (prev && (prev.startedAt || 0) >= (j.startedAt || 0)) continue
+      map.set(j.sessionId, { pid: j.pid, procStart: j.procStart, status: j.status, entry: j.entrypoint, startedAt: j.startedAt })
+    }
+  }
+  return { map, known }
+}
+
+// 데스크톱 앱이 세션마다 두는 파일 (claude-code-sessions/**/local_<ID>.json). 보관하지 않은 세션은 앱 사이드바에 열려 있다.
+// 파일 하나가 수백 KB 라 앞부분만 읽고, 바뀐 파일만 다시 읽는다.
+function appRoots() {
+  const home = os.homedir(), out = []
+  const local = process.env.LOCALAPPDATA, roaming = process.env.APPDATA
+  if (local) for (const d of listDirs(path.join(local, 'Claude-Data'))) out.push(path.join(d, 'claude-code-sessions'))
+  if (roaming) out.push(path.join(roaming, 'Claude', 'claude-code-sessions'))
+  out.push(path.join(home, 'Library', 'Application Support', 'Claude', 'claude-code-sessions'), path.join(home, '.config', 'Claude', 'claude-code-sessions'))
+  return out.filter(d => fs.existsSync(d))
+}
+const appFiles = new Map()
+function readAppSession(file, st) {
+  let c = appFiles.get(file)
+  if (c && c.mtime === st.mtimeMs && c.size === st.size) return c
+  let text = ''
+  try { const fd = fs.openSync(file, 'r'), buf = Buffer.alloc(Math.min(st.size, 65536)); fs.readSync(fd, buf, 0, buf.length, 0); fs.closeSync(fd); text = buf.toString('utf8') } catch { return null }
+  let arch = text.match(/"isArchived":(true|false)/)
+  if (!arch && st.size > 65536) try { text = fs.readFileSync(file, 'utf8'); arch = text.match(/"isArchived":(true|false)/) } catch {}
+  const ids = [...text.matchAll(/"(?:cliSessionId|lastAssistantCliSessionId)":"([0-9a-zA-Z_-]{8,})"/g)].map(m => m[1])
+  c = { mtime: st.mtimeMs, size: st.size, ids, archived: !!arch && arch[1] === 'true' }
+  appFiles.set(file, c)
+  return c
+}
+// 앱에 열려 있는 세션 ID. known: 데스크톱 앱 기록이 있는지.
+export function appOpenSessions() {
+  const open = new Set(), roots = appRoots()
+  const walk = (dir, depth) => {
+    let ents = []
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const e of ents) {
+      const p = path.join(dir, e.name)
+      if (e.isDirectory()) { if (depth < 3) walk(p, depth + 1); continue }
+      if (!/^local_.*\.json$/.test(e.name)) continue
+      let st
+      try { st = fs.statSync(p) } catch { continue }
+      const c = readAppSession(p, st)
+      if (c && !c.archived) for (const id of c.ids) open.add(id)
+    }
+  }
+  for (const r of roots) walk(r, 0)
+  return { open, known: roots.length > 0 }
+}
+
+// 최근에 바뀐 순서로 limit 개. 켜져 있는지와 작업 중인지는 Claude Code 의 실행 기록으로 판단하고,
+// 그 기록이 없는 버전이면 15분 넘게 조용한 세션은 작업 중으로 치지 않는다 (끊긴 세션).
+// open: 데스크톱 앱 사이드바에 열려 있는지 (앱 기록이 없으면 undefined). 꺼져 있고 열려 있지도 않으면 닫힌 세션이다.
+// hidden: 사용자가 목록에서 뺀 세션 ID. 닫힌 세션일 때만 빼고, 다시 켜거나 앱에서 열면 돌아온다.
+// 돌려주는 배열의 hidden 에 그렇게 빠진 세션 수를 단다.
+export function listSessions(dirs, limit = 50, hidden = new Set()) {
+  const run = runningSessions(), app = appOpenSessions()
   const files = []
   for (const d of dirs) {
     let names = []
@@ -435,14 +507,69 @@ export function listSessions(dirs, limit = 50) {
   }
   files.sort((a, b) => b.mtime - a.mtime)
   const out = []
+  let skipped = 0
   for (const f of files) {
-    if (out.length >= limit) break
+    const r = run.map.get(f.id), open = app.known ? app.open.has(f.id) : undefined
+    if (hidden.has(f.id) && !r && !open) { skipped++; continue }
+    if (out.length >= limit) continue
     const m = scanMeta(f.file, f.size)
     const title = m.custom || m.agent || m.ai
     if (!title && !m.prompt) continue
-    out.push({ id: f.id, title, prompt: m.prompt, cwd: m.cwd, updated: new Date(f.mtime).toISOString(), busy: m.busy && Date.now() - f.mtime < 15 * 60000, board: boardSummary(f.id) })
+    const busy = r ? r.status === 'busy' : !run.known && m.busy && Date.now() - f.mtime < 15 * 60000
+    out.push({ id: f.id, title, prompt: m.prompt, cwd: m.cwd, entry: (r && r.entry) || m.entry, running: run.known ? !!r : undefined, open, updated: new Date(f.mtime).toISOString(), busy, board: boardSummary(f.id) })
+  }
+  out.hidden = skipped
+  return out
+}
+
+// 목록에서 뺀 세션 ({ "hidden": { "<세션ID>": "뺀 시각" } }). 세션 기록은 그대로 두고 보드 목록에서만 가린다.
+export const hiddenFile = path.join(boardDir, 'hidden.json')
+let hiddenCache = { mtime: -1, map: {} }
+export function readHidden() {
+  let mtime = 0
+  try { mtime = fs.statSync(hiddenFile).mtimeMs } catch { return new Map() }
+  if (mtime !== hiddenCache.mtime) {
+    let map = {}
+    try { const j = JSON.parse(fs.readFileSync(hiddenFile, 'utf8')); if (j && j.hidden && typeof j.hidden === 'object') map = j.hidden } catch {}
+    hiddenCache = { mtime, map }
+  }
+  return new Map(Object.entries(hiddenCache.map).filter(([id]) => validSession(id)))
+}
+export function writeHidden(map) {
+  fs.mkdirSync(boardDir, { recursive: true })
+  const tmp = hiddenFile + '.' + process.pid + '.tmp'
+  fs.writeFileSync(tmp, JSON.stringify({ hidden: Object.fromEntries(map) }, null, 1))
+  fs.renameSync(tmp, hiddenFile)
+}
+
+// 세션 아이콘 글자 ({ "labels": { "<세션ID>": "네 글자까지" } }). 없으면 이름에서 자동으로 두 글자를 뽑는다.
+export const labelsFile = path.join(boardDir, 'labels.json')
+// 앞뒤 공백과 제어 문자를 빼고 네 글자까지만 남긴다. 비면 ''.
+export function normalizeLabel(text) {
+  const s = String(text == null ? '' : text).replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim()
+  return Array.from(s).slice(0, 4).join('').trim()
+}
+let labelsCache = { mtime: -1, map: {} }
+export function readLabels() {
+  let mtime = 0
+  try { mtime = fs.statSync(labelsFile).mtimeMs } catch { return new Map() }
+  if (mtime !== labelsCache.mtime) {
+    let map = {}
+    try { const j = JSON.parse(fs.readFileSync(labelsFile, 'utf8')); if (j && j.labels && typeof j.labels === 'object') map = j.labels } catch {}
+    labelsCache = { mtime, map }
+  }
+  const out = new Map()
+  for (const [id, text] of Object.entries(labelsCache.map)) {
+    const t = validSession(id) && normalizeLabel(text)
+    if (t) out.set(id, t)
   }
   return out
+}
+export function writeLabels(map) {
+  fs.mkdirSync(boardDir, { recursive: true })
+  const tmp = labelsFile + '.' + process.pid + '.tmp'
+  fs.writeFileSync(tmp, JSON.stringify({ labels: Object.fromEntries(map) }, null, 1))
+  fs.renameSync(tmp, labelsFile)
 }
 
 // ---------- 하위 에이전트 기록 ----------
